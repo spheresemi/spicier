@@ -96,22 +96,24 @@ Completed:
 * Circuit graph representation with MNA matrix stamping
 * Device models: R, L, C, V, I (passive + sources) with MNA stamps
 * Nonlinear devices: Diode (Shockley equation), MOSFET Level 1 (NMOS/PMOS)
+* Controlled sources: VCVS (E), VCCS (G), CCCS (F), CCVS (H) with MNA stamps
 * Dense linear solver (LU decomposition) — real and complex
+* Sparse linear solver (faer LU) — real and complex, auto-selected for systems with 50+ variables
 * Newton-Raphson nonlinear solver with convergence criteria and voltage limiting
-* SPICE netlist parser (R, C, L, V, I elements, SI suffixes, comments, continuations)
+* Nonlinear DC operating point via Newton-Raphson (auto-dispatched when diodes/MOSFETs present)
+* SPICE netlist parser (R, C, L, V, I, D, M, E, G, F, H elements; .MODEL; SI suffixes)
 * DC operating point analysis (.OP) with CLI integration
-* Transient analysis (.TRAN) — Backward Euler and Trapezoidal integration
+* Transient analysis (.TRAN) — Backward Euler and Trapezoidal integration, CLI output
 * AC small-signal analysis (.AC) — Linear, Decade, and Octave sweeps
 * DC sweep analysis (.DC) with CLI tabular output
 * Analysis command parsing (.OP, .DC, .AC, .TRAN) from netlists
 * Multi-analysis CLI dispatch based on netlist commands
-* 83 tests passing, clippy clean
+* 106 tests passing, clippy clean
 * GitHub Actions CI (Linux, macOS, Windows), benchmarking infrastructure
 
 In progress:
-* DC sweep (.DC), adaptive timestep control, initial conditions (.IC)
+* Adaptive timestep control, initial conditions (.IC)
 * Automatic small-signal linearization of nonlinear devices for AC
-* Sparse solver integration
 
 Expect sharp edges, incomplete features, and rapid iteration.
 
@@ -209,7 +211,7 @@ This roadmap emphasizes **differentiation from Spice21** by focusing on performa
 * SIMD-friendly device model evaluation
 * Batched Newton-Raphson iterations
 * Parallel matrix assembly
-* Pluggable linear solvers (dense + sparse)
+* Pluggable linear solvers (dense + sparse) ✅ (faer sparse LU integrated)
 * Performance benchmarking against ngspice
 
 ### Phase 2 — GPU Acceleration

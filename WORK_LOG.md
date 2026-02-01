@@ -186,3 +186,85 @@
 - Added public roadmap with 5 phases (Foundations through Advanced Models)
 - Added design philosophy statement
 - 83 total tests passing, clippy clean
+
+### Nonlinear DC, Transient CLI, D/M Parsing, Controlled Sources
+
+Extended Stamper trait and wired remaining solver capabilities into CLI end-to-end.
+
+**Stamper trait extensions:**
+- Added `is_nonlinear()`, `stamp_nonlinear(mna, solution)`, `transient_info()` to Stamper trait
+- Added `TransientDeviceInfo` enum (Capacitor, Inductor, None)
+- Added `has_nonlinear_devices()` and `stamp_nonlinear_into()` to Netlist
+
+**Nonlinear device integration:**
+- Diode and MOSFET `stamp_nonlinear()` renamed to `stamp_linearized_at()` (avoids trait collision)
+- Implemented Stamper::stamp_nonlinear() on both — extracts operating point from solution vector
+- Fixed diode voltage limiting consistency bug: `limit_voltage()` now applied before both `evaluate()` and `ieq` computation
+- NetlistNonlinearStamper bridges Netlist to Newton-Raphson solver
+- CLI auto-dispatches to NR when nonlinear devices present
+- Diode circuit (V=5V + R=1k + D1): converges in 10 iterations, V(diode)=0.74V
+
+**Transient CLI integration:**
+- Capacitor and Inductor implement `transient_info()` returning device parameters
+- NetlistTransientStamper: stamps all non-reactive devices per timestep
+- `build_transient_state()` extracts CapacitorState/InductorState from netlist
+- `run_transient()`: DC OP → time-stepping with Trapezoidal method → tabular output
+
+**Parser: D/M elements + .MODEL:**
+- `ModelDefinition` enum (Diode, Nmos, Pmos) with `HashMap<String, ModelDefinition>` storage
+- `.MODEL name type (param=value ...)` parsing for D, NMOS, PMOS types
+- `D1 anode cathode [modelname]` parsing
+- `M1 drain gate source bulk [modelname] [W=val L=val]` parsing
+
+**Controlled sources (E/G/F/H):**
+- New file: `crates/spicier-devices/src/controlled.rs`
+- VCVS (E): branch current variable + gain coupling
+- VCCS (G): direct gm matrix stamps (sign convention: positive current enters out_pos)
+- CCCS (F): gain * I(Vsource) into output nodes
+- CCVS (H): branch current variable + transresistance coupling
+- All implement Stamp, Element, Stamper traits with ac_info()
+- Parser support for E/G/F/H element lines
+- AC stamper handles all controlled source variants with complex stamps
+- Fixed VCCS sign convention (SPICE G element: current enters out_pos terminal)
+
+**Tests:** 101 total passing (was 83), clippy clean
+**New examples:** diode_circuit.sp, rc_transient.sp
+
+### Sparse Solver Integration via faer
+
+Integrated faer 0.24 (pure Rust) for sparse LU factorization alongside the existing nalgebra dense solver. All analysis paths now auto-select sparse or dense based on system size.
+
+**Architecture changes:**
+- MnaSystem gains `triplets: Vec<(usize, usize, f64)>` accumulator
+- New `add_element(row, col, value)` method writes to both dense matrix and triplets
+- New `add_rhs(row, value)` method for RHS entries
+- ComplexMna gains equivalent `triplets` and `add_element()` for AC analysis
+- `stamp_conductance()`, `stamp_current_source()`, `stamp_voltage_source()` refactored to use `add_element()`/`add_rhs()` internally
+- `clear()` now also clears triplets
+
+**Device stamping migration:**
+- All 4 controlled sources (VCVS, VCCS, CCCS, CCVS) migrated from `mna.matrix_mut()[(i,j)] += v` to `mna.add_element(i, j, v)` (~20 call sites)
+- MOSFET `stamp_linearized_at()` gm stamping migrated (~4 call sites)
+- AC controlled source stamping in CLI migrated (~18 call sites)
+
+**New solver functions (`linear.rs`):**
+- `solve_sparse(size, triplets, rhs)` — builds `SparseColMat` from triplets, sparse LU via `sp_lu()`
+- `solve_sparse_complex(size, triplets, rhs)` — same for complex systems using `c64`
+- `SPARSE_THRESHOLD = 50` — systems with 50+ variables use sparse path
+
+**Analysis function updates:**
+- `solve_dc()` — auto-selects sparse when `mna.size() >= 50`
+- `solve_newton_raphson()` — auto-selects sparse per NR iteration
+- `solve_transient()` — auto-selects sparse per timestep
+- `solve_ac()` — auto-selects sparse complex per frequency point
+
+**Tests:** 106 total passing (was 101), clippy clean
+- `test_solve_sparse_simple` — 2x2 real system
+- `test_solve_sparse_complex_simple` — 2x2 complex system, verified via Ax=b
+- `test_solve_sparse_matches_dense` — 20x20 diagonally dominant system, sparse == dense within 1e-10
+- `test_solve_sparse_dimension_mismatch` — error handling
+- `test_solve_sparse_with_duplicate_triplets` — verifies faer sums duplicates
+
+**Benchmarks:** Updated with `solve_sparse` group at sizes 10/50/100/500 for crossover analysis
+
+**Files modified:** Cargo.toml (workspace + solver), mna.rs, linear.rs, dc.rs, newton.rs, transient.rs, ac.rs, controlled.rs, mosfet.rs, main.rs, solver.rs (bench)
