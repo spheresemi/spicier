@@ -1,0 +1,16 @@
+[package]
+name = "spicier-cli"
+description = "Command-line interface for Spicier circuit simulator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+spicier-core.workspace = true
+spicier-solver.workspace = true
+spicier-devices.workspace = true
+spicier-parser.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+num-complex.workspace = true

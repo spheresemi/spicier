@@ -1,0 +1,6 @@
+[submodule "ngspice"]
+	path = ngspice
+	url = https://git.code.sf.net/p/ngspice/ngspice
+[submodule "spice21"]
+	path = spice21
+	url = https://github.com/dan-fritchman/Spice21.git

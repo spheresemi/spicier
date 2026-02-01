@@ -1,0 +1,22 @@
+[package]
+name = "spicier-solver"
+description = "Linear and nonlinear solvers for Spicier"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+spicier-core.workspace = true
+thiserror.workspace = true
+nalgebra.workspace = true
+num-complex.workspace = true
+num-traits.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+spicier-devices.workspace = true
+
+[[bench]]
+name = "solver"
+harness = false

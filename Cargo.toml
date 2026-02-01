@@ -1,0 +1,47 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/spicier-core",
+    "crates/spicier-solver",
+    "crates/spicier-devices",
+    "crates/spicier-parser",
+    "crates/spicier-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rwalters/spicier"
+
+[workspace.dependencies]
+# Internal crates
+spicier-core = { path = "crates/spicier-core" }
+spicier-solver = { path = "crates/spicier-solver" }
+spicier-devices = { path = "crates/spicier-devices" }
+spicier-parser = { path = "crates/spicier-parser" }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Numerical/math
+nalgebra = "0.33"
+num-complex = "0.4"
+num-traits = "0.2"
+
+# Collections
+indexmap = "2"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Testing/benchmarking
+criterion = "0.5"
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+[profile.bench]
+lto = true

@@ -1,0 +1,20 @@
+[package]
+name = "spicier-parser"
+description = "SPICE netlist parser for Spicier"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+spicier-core.workspace = true
+spicier-devices.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+spicier-solver.workspace = true
+
+[[bench]]
+name = "parser"
+harness = false
