@@ -308,9 +308,29 @@ Phased roadmap for building Spicier, a high-performance SPICE circuit simulator 
 - [ ] Sparse-only ComplexMna
   - Apply same sparse-only treatment to AC analysis complex MNA system
 
-**Dependencies:** Phase 7 (AC analysis uses ComplexMna)
+### GMRES Integration (leverages Phase 8 infrastructure)
 
-**Acceptance Criteria (remaining):** NR and transient solves reuse symbolic factorization. MnaSystem memory scales with nnz, not n².
+- [ ] `SparseRealOperator` wrapper
+  - Wraps faer `SparseColMat<f64>` and implements `RealOperator`
+  - Enables GMRES as alternative to direct LU for real systems (DC, transient)
+- [ ] `SparseComplexOperator` wrapper
+  - Wraps faer `SparseColMat<c64>` and implements `ComplexOperator`
+  - Enables GMRES as alternative for complex systems (AC)
+- [ ] Real-valued GMRES (`solve_gmres_real`)
+  - Port complex GMRES to work with `RealOperator`
+  - Uses `real_dot_product` SIMD kernels from `spicier-simd`
+- [ ] Solver selection heuristic
+  - Auto-choose direct LU vs iterative GMRES based on system size
+  - Direct LU preferred for small/medium systems (fast, exact)
+  - GMRES preferred for very large systems (>10k nodes) where LU memory/time dominates
+  - Configurable threshold and override via CLI/API
+- [ ] Preconditioned GMRES
+  - ILU(0) or Jacobi preconditioner for faster convergence
+  - Preconditioner reuse across NR iterations (same sparsity pattern)
+
+**Dependencies:** Phase 7 (AC analysis uses ComplexMna), Phase 8 (operator traits, SIMD)
+
+**Acceptance Criteria (remaining):** NR and transient solves reuse symbolic factorization. MnaSystem memory scales with nnz, not n². GMRES available as alternative solver for large systems.
 
 ---
 
