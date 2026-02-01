@@ -6,18 +6,17 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use nalgebra::DVector;
 use num_complex::Complex;
 use spicier_core::mna::MnaSystem;
-use spicier_core::netlist::AcDeviceInfo;
+use spicier_core::netlist::{AcDeviceInfo, TransientDeviceInfo};
 use spicier_core::NodeId;
 use spicier_parser::{AcSweepType, AnalysisCommand, parse_full};
-use nalgebra::DVector;
-use spicier_core::netlist::TransientDeviceInfo;
 use spicier_solver::{
     AcParams, AcStamper, AcSweepType as SolverAcSweepType, CapacitorState, ComplexMna,
-    ConvergenceCriteria, DcSweepParams, DcSweepStamper, DcSolution, InductorState,
-    IntegrationMethod, NonlinearStamper, TransientParams, TransientStamper, solve_ac, solve_dc,
-    solve_dc_sweep, solve_newton_raphson, solve_transient,
+    ComputeBackend, ConvergenceCriteria, DcSolution, DcSweepParams, DcSweepStamper,
+    InductorState, IntegrationMethod, NonlinearStamper, TransientParams, TransientStamper,
+    solve_ac, solve_dc, solve_dc_sweep, solve_newton_raphson, solve_transient,
 };
 
 #[derive(Parser)]
@@ -33,6 +32,10 @@ struct Cli {
     #[arg(short = 'o', long = "op")]
     dc_op: bool,
 
+    /// Compute backend: auto, cpu, cuda, or metal
+    #[arg(long, default_value = "auto")]
+    backend: String,
+
     /// Verbose output
     #[arg(short, long)]
     verbose: bool,
@@ -42,23 +45,90 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     if let Some(ref input) = cli.input {
-        run_simulation(input, &cli)?;
+        // Select compute backend
+        let backend = detect_backend(&cli.backend);
+
+        if cli.verbose {
+            println!("Backend: {}", backend);
+        }
+
+        run_simulation(input, &cli, &backend)?;
     } else {
         println!("Spicier - High Performance SPICE Simulator");
         println!();
         println!("Usage: spicier <netlist.sp> [options]");
         println!();
         println!("Options:");
-        println!("  -o, --op       Run DC operating point analysis");
-        println!("  -v, --verbose  Verbose output");
-        println!("  -h, --help     Show help");
-        println!("  -V, --version  Show version");
+        println!("  -o, --op           Run DC operating point analysis");
+        println!("  --backend <NAME>   Compute backend: auto, cpu, cuda, metal");
+        println!("  -v, --verbose      Verbose output");
+        println!("  -h, --help         Show help");
+        println!("  -V, --version      Show version");
     }
 
     Ok(())
 }
 
-fn run_simulation(input: &PathBuf, cli: &Cli) -> Result<()> {
+/// Detect and select the compute backend based on CLI argument.
+fn detect_backend(name: &str) -> ComputeBackend {
+    match name.to_lowercase().as_str() {
+        "cpu" => ComputeBackend::Cpu,
+        "cuda" => {
+            #[cfg(feature = "cuda")]
+            {
+                if spicier_backend_cuda::context::CudaContext::is_available() {
+                    ComputeBackend::Cuda { device_id: 0 }
+                } else {
+                    eprintln!("Warning: CUDA requested but not available, falling back to CPU");
+                    ComputeBackend::Cpu
+                }
+            }
+            #[cfg(not(feature = "cuda"))]
+            {
+                eprintln!("Warning: CUDA support not compiled in, falling back to CPU");
+                ComputeBackend::Cpu
+            }
+        }
+        "metal" => {
+            #[cfg(feature = "metal")]
+            {
+                if spicier_backend_metal::context::WgpuContext::is_available() {
+                    ComputeBackend::Metal {
+                        adapter_name: String::new(),
+                    }
+                } else {
+                    eprintln!("Warning: Metal/WebGPU requested but not available, falling back to CPU");
+                    ComputeBackend::Cpu
+                }
+            }
+            #[cfg(not(feature = "metal"))]
+            {
+                eprintln!("Warning: Metal support not compiled in, falling back to CPU");
+                ComputeBackend::Cpu
+            }
+        }
+        _ => {
+            // Try Metal first (macOS), then CUDA, then CPU
+            #[cfg(feature = "metal")]
+            {
+                if spicier_backend_metal::context::WgpuContext::is_available() {
+                    return ComputeBackend::Metal {
+                        adapter_name: String::new(),
+                    };
+                }
+            }
+            #[cfg(feature = "cuda")]
+            {
+                if spicier_backend_cuda::context::CudaContext::is_available() {
+                    return ComputeBackend::Cuda { device_id: 0 };
+                }
+            }
+            ComputeBackend::Cpu
+        }
+    }
+}
+
+fn run_simulation(input: &PathBuf, cli: &Cli, _backend: &ComputeBackend) -> Result<()> {
     // Read netlist file
     let content = fs::read_to_string(input)
         .with_context(|| format!("Failed to read netlist: {}", input.display()))?;

@@ -8,10 +8,13 @@
 //! - Newton-Raphson iteration for nonlinear circuits
 
 pub mod ac;
+pub mod backend;
 pub mod dc;
 pub mod error;
+pub mod gmres;
 pub mod linear;
 pub mod newton;
+pub mod operator;
 pub mod transient;
 
 pub use ac::{
@@ -24,3 +27,6 @@ pub use transient::{
     CapacitorState, InductorState, IntegrationMethod, TransientParams, TransientResult,
     TransientStamper, solve_transient,
 };
+pub use backend::ComputeBackend;
+pub use gmres::{GmresConfig, GmresResult, solve_gmres};
+pub use operator::{ComplexOperator, RealOperator};

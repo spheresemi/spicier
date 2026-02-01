@@ -2,9 +2,13 @@
 resolver = "2"
 members = [
     "crates/spicier-core",
+    "crates/spicier-simd",
     "crates/spicier-solver",
     "crates/spicier-devices",
     "crates/spicier-parser",
+    "crates/spicier-backend-cpu",
+    "crates/spicier-backend-cuda",
+    "crates/spicier-backend-metal",
     "crates/spicier-cli",
 ]
 
@@ -17,9 +21,13 @@ repository = "https://github.com/rwalters/spicier"
 [workspace.dependencies]
 # Internal crates
 spicier-core = { path = "crates/spicier-core" }
+spicier-simd = { path = "crates/spicier-simd" }
 spicier-solver = { path = "crates/spicier-solver" }
 spicier-devices = { path = "crates/spicier-devices" }
 spicier-parser = { path = "crates/spicier-parser" }
+spicier-backend-cpu = { path = "crates/spicier-backend-cpu" }
+spicier-backend-cuda = { path = "crates/spicier-backend-cuda" }
+spicier-backend-metal = { path = "crates/spicier-backend-metal" }
 
 # Error handling
 thiserror = "2"
@@ -33,6 +41,13 @@ faer = "0.24"
 
 # Collections
 indexmap = "2"
+
+# GPU/Backend
+cudarc = { version = "0.16", features = ["std", "driver", "cublas", "dynamic-loading", "cuda-12000"], default-features = false }
+wgpu = "23"
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "0.4"
+log = "0.4"
 
 # CLI
 clap = { version = "4", features = ["derive"] }

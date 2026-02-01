@@ -1,0 +1,12 @@
+[package]
+name = "spicier-backend-cpu"
+description = "CPU backend for Spicier with SIMD-accelerated operators"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+spicier-simd.workspace = true
+spicier-solver.workspace = true
+num-complex.workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "spicier-backend-metal"
+description = "Metal/WebGPU backend for Spicier GPU-accelerated operators"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+spicier-solver.workspace = true
+num-complex.workspace = true
+wgpu.workspace = true
+bytemuck.workspace = true
+pollster.workspace = true
+log.workspace = true
