@@ -348,3 +348,29 @@ Ported reusable infrastructure from the `mom` (Method of Moments EM solver) proj
 - `crates/spicier-solver/src/lib.rs` (new module exports)
 - `crates/spicier-cli/Cargo.toml` (optional GPU backend deps)
 - `crates/spicier-cli/src/main.rs` (--backend flag + detect_backend())
+
+### Symbolic Factorization Caching
+
+Added cached sparse LU solvers that separate symbolic and numeric factorization. The symbolic factorization (elimination tree, fill-in pattern) is computed once and reused for repeated solves with the same sparsity pattern.
+
+**New types (`linear.rs`):**
+- `CachedSparseLu` — real-valued cached solver
+  - `new(size, triplets)` — creates solver with symbolic factorization
+  - `solve(triplets, rhs)` — solves using cached symbolic, only numeric factorization
+- `CachedSparseLuComplex` — complex-valued cached solver (for AC analysis)
+  - Same API as real version
+
+**Integration:**
+- Newton-Raphson (`newton.rs`) — creates cached solver on first iteration, reuses for subsequent NR iterations
+- Transient (`transient.rs`) — creates cached solver on first timestep, reuses for all timesteps
+- AC analysis (`ac.rs`) — creates cached solver on first frequency point, reuses for all frequencies
+
+**Tests:** 175 total passing (was 169), 6 new tests for cached solvers
+
+**Files modified:**
+- `crates/spicier-solver/src/linear.rs` (CachedSparseLu, CachedSparseLuComplex + tests)
+- `crates/spicier-solver/src/error.rs` (SolverError variant)
+- `crates/spicier-solver/src/lib.rs` (exports)
+- `crates/spicier-solver/src/newton.rs` (use cached solver)
+- `crates/spicier-solver/src/transient.rs` (use cached solver)
+- `crates/spicier-solver/src/ac.rs` (use cached solver)

@@ -12,6 +12,9 @@ pub enum Error {
 
     #[error("invalid matrix dimensions: expected {expected}, got {actual}")]
     DimensionMismatch { expected: usize, actual: usize },
+
+    #[error("solver error: {0}")]
+    SolverError(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

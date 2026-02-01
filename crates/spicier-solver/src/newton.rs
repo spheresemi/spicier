@@ -4,7 +4,7 @@ use nalgebra::DVector;
 use spicier_core::mna::MnaSystem;
 
 use crate::error::Result;
-use crate::linear::{SPARSE_THRESHOLD, solve_dense, solve_sparse};
+use crate::linear::{CachedSparseLu, SPARSE_THRESHOLD, solve_dense};
 
 /// Convergence criteria for Newton-Raphson iteration.
 #[derive(Debug, Clone)]
@@ -63,6 +63,10 @@ pub struct NrResult {
 /// * `stamper` - Callback to stamp the system at each iteration point
 /// * `criteria` - Convergence criteria
 /// * `initial_guess` - Optional initial solution guess
+///
+/// For large systems (>= SPARSE_THRESHOLD), uses cached symbolic factorization
+/// to speed up repeated solves. The sparsity pattern is determined on the first
+/// iteration and reused for all subsequent iterations.
 pub fn solve_newton_raphson(
     num_nodes: usize,
     num_vsources: usize,
@@ -80,6 +84,9 @@ pub fn solve_newton_raphson(
 
     let mut mna = MnaSystem::new(num_nodes, num_vsources);
 
+    // Cached sparse solver (created on first iteration if needed)
+    let mut cached_solver: Option<CachedSparseLu> = None;
+
     for iteration in 0..criteria.max_iterations {
         // Clear and re-stamp at current operating point
         mna.clear();
@@ -87,7 +94,16 @@ pub fn solve_newton_raphson(
 
         // Solve the linearized system
         let new_solution = if size >= SPARSE_THRESHOLD {
-            solve_sparse(size, &mna.triplets, mna.rhs())?
+            // Use cached sparse solver for large systems
+            let solver = match &cached_solver {
+                Some(s) => s,
+                None => {
+                    // First iteration: create cached solver with symbolic factorization
+                    cached_solver = Some(CachedSparseLu::new(size, &mna.triplets)?);
+                    cached_solver.as_ref().unwrap()
+                }
+            };
+            solver.solve(&mna.triplets, mna.rhs())?
         } else {
             solve_dense(mna.matrix(), mna.rhs())?
         };

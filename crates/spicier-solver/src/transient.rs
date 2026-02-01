@@ -4,7 +4,7 @@ use nalgebra::DVector;
 use spicier_core::mna::MnaSystem;
 
 use crate::error::Result;
-use crate::linear::{SPARSE_THRESHOLD, solve_dense, solve_sparse};
+use crate::linear::{CachedSparseLu, SPARSE_THRESHOLD, solve_dense};
 
 /// Integration method for transient analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -245,6 +245,10 @@ pub fn solve_transient(
     });
 
     let num_steps = (params.tstop / h).ceil() as usize;
+    let mna_size = num_nodes + num_vsources;
+
+    // Cached sparse solver (created on first timestep if needed)
+    let mut cached_solver: Option<CachedSparseLu> = None;
 
     for step in 1..=num_steps {
         let t = (step as f64) * h;
@@ -275,10 +279,16 @@ pub fn solve_transient(
             }
         }
 
-        // Solve
-        let mna_size = num_nodes + num_vsources;
+        // Solve using cached symbolic factorization for large systems
         solution = if mna_size >= SPARSE_THRESHOLD {
-            solve_sparse(mna_size, &mna.triplets, mna.rhs())?
+            let solver = match &cached_solver {
+                Some(s) => s,
+                None => {
+                    cached_solver = Some(CachedSparseLu::new(mna_size, &mna.triplets)?);
+                    cached_solver.as_ref().unwrap()
+                }
+            };
+            solver.solve(&mna.triplets, mna.rhs())?
         } else {
             solve_dense(mna.matrix(), mna.rhs())?
         };

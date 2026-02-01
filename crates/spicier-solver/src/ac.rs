@@ -6,7 +6,7 @@ use nalgebra::{DMatrix, DVector};
 use num_complex::Complex;
 
 use crate::error::Result;
-use crate::linear::{SPARSE_THRESHOLD, solve_complex, solve_sparse_complex};
+use crate::linear::{CachedSparseLuComplex, SPARSE_THRESHOLD, solve_complex};
 
 /// AC sweep type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -340,15 +340,22 @@ impl AcResult {
 /// - Inductors with jωL impedance (using branch current variables)
 /// - Voltage sources with AC stimulus value
 /// - Linearized nonlinear devices (gm, gds from DC operating point)
+///
+/// For large systems (>= SPARSE_THRESHOLD), uses cached symbolic factorization
+/// to speed up repeated solves across frequency points.
 pub fn solve_ac(stamper: &dyn AcStamper, params: &AcParams) -> Result<AcResult> {
     let num_nodes = stamper.num_nodes();
     let num_vsources = stamper.num_vsources();
     let frequencies = generate_frequencies(params);
+    let mna_size = num_nodes + num_vsources;
 
     let mut result = AcResult {
         points: Vec::with_capacity(frequencies.len()),
         num_nodes,
     };
+
+    // Cached sparse solver (created on first frequency point if needed)
+    let mut cached_solver: Option<CachedSparseLuComplex> = None;
 
     for &freq in &frequencies {
         let omega = 2.0 * PI * freq;
@@ -356,8 +363,15 @@ pub fn solve_ac(stamper: &dyn AcStamper, params: &AcParams) -> Result<AcResult> 
 
         stamper.stamp_ac(&mut mna, omega);
 
-        let solution = if mna.size() >= SPARSE_THRESHOLD {
-            solve_sparse_complex(mna.size(), &mna.triplets, mna.rhs())?
+        let solution = if mna_size >= SPARSE_THRESHOLD {
+            let solver = match &cached_solver {
+                Some(s) => s,
+                None => {
+                    cached_solver = Some(CachedSparseLuComplex::new(mna_size, &mna.triplets)?);
+                    cached_solver.as_ref().unwrap()
+                }
+            };
+            solver.solve(&mna.triplets, mna.rhs())?
         } else {
             solve_complex(mna.matrix(), mna.rhs())?
         };

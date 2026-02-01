@@ -22,6 +22,7 @@ pub use ac::{
 };
 pub use dc::{DcSolution, DcSweepParams, DcSweepResult, DcSweepStamper, solve_dc, solve_dc_sweep};
 pub use error::{Error, Result};
+pub use linear::{CachedSparseLu, CachedSparseLuComplex};
 pub use newton::{ConvergenceCriteria, NonlinearStamper, NrResult, solve_newton_raphson};
 pub use transient::{
     CapacitorState, InductorState, IntegrationMethod, TransientParams, TransientResult,

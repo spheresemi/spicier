@@ -297,9 +297,10 @@ Phased roadmap for building Spicier, a high-performance SPICE circuit simulator 
 
 ### Remaining Optimizations
 
-- [ ] Symbolic factorization caching
+- [x] Symbolic factorization caching
   - For NR iterations and transient timesteps, the sparsity pattern is fixed
-  - Cache `SymbolicLu` and only redo numeric factorization
+  - `CachedSparseLu` and `CachedSparseLuComplex` cache `SymbolicLu` and only redo numeric factorization
+  - Integrated into Newton-Raphson, transient, and AC analysis paths
   - Major speedup for repeated solves with the same structure
 - [ ] Sparse-only MnaSystem
   - Remove dense matrix field from MnaSystem
