@@ -9,5 +9,10 @@ repository.workspace = true
 keywords = ["simd", "avx2", "avx512", "numerical", "performance"]
 categories = ["mathematics", "science"]
 
+[features]
+default = ["accelerate"]
+# Apple Accelerate framework (macOS only) - uses AMX coprocessor for 3-5x speedup
+accelerate = []
+
 [dependencies]
 num-complex.workspace = true

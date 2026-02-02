@@ -2,8 +2,53 @@
 //!
 //! Same SIMD dispatch pattern as the complex variants, but for real-valued
 //! operations used in DC and transient analysis.
+//!
+//! On macOS with the `accelerate` feature, uses Apple's Accelerate framework
+//! which leverages the AMX coprocessor for 3-5x speedup over scalar code.
 
 use crate::capability::SimdCapability;
+
+// ============================================================================
+// Apple Accelerate FFI Bindings
+// ============================================================================
+
+#[cfg(all(target_os = "macos", feature = "accelerate"))]
+#[link(name = "Accelerate", kind = "framework")]
+unsafe extern "C" {
+    /// BLAS ddot: Compute dot product of two vectors.
+    /// Returns: sum(x[i] * y[i]) for i in 0..n
+    fn cblas_ddot(
+        n: i32,
+        x: *const f64,
+        incx: i32,
+        y: *const f64,
+        incy: i32,
+    ) -> f64;
+
+    /// BLAS dgemv: Matrix-vector multiply y = alpha*A*x + beta*y
+    /// order: CblasRowMajor (101) or CblasColMajor (102)
+    /// trans: CblasNoTrans (111), CblasTrans (112), CblasConjTrans (113)
+    fn cblas_dgemv(
+        order: i32,
+        trans: i32,
+        m: i32,
+        n: i32,
+        alpha: f64,
+        a: *const f64,
+        lda: i32,
+        x: *const f64,
+        incx: i32,
+        beta: f64,
+        y: *mut f64,
+        incy: i32,
+    );
+}
+
+// CBLAS constants
+#[cfg(all(target_os = "macos", feature = "accelerate"))]
+const CBLAS_ROW_MAJOR: i32 = 101;
+#[cfg(all(target_os = "macos", feature = "accelerate"))]
+const CBLAS_NO_TRANS: i32 = 111;
 
 /// Compute real dot product: `sum(a[i] * b[i])` for i in 0..n.
 ///
@@ -21,6 +66,8 @@ pub fn real_dot_product(a: &[f64], b: &[f64], capability: SimdCapability) -> f64
         SimdCapability::Avx512 => unsafe { real_dot_avx512(a, b) },
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         SimdCapability::Avx2 => unsafe { real_dot_avx2(a, b) },
+        #[cfg(all(target_os = "macos", feature = "accelerate"))]
+        SimdCapability::Accelerate => real_dot_accelerate(a, b),
         SimdCapability::Scalar => real_dot_scalar(a, b),
     }
 }
@@ -35,6 +82,54 @@ pub fn real_dot_scalar(a: &[f64], b: &[f64]) -> f64 {
     sum
 }
 
+/// Apple Accelerate implementation of real dot product.
+///
+/// Uses cblas_ddot which leverages the AMX coprocessor on Apple Silicon.
+#[cfg(all(target_os = "macos", feature = "accelerate"))]
+#[inline]
+pub fn real_dot_accelerate(a: &[f64], b: &[f64]) -> f64 {
+    if a.is_empty() {
+        return 0.0;
+    }
+    unsafe {
+        cblas_ddot(
+            a.len() as i32,
+            a.as_ptr(),
+            1, // stride for a
+            b.as_ptr(),
+            1, // stride for b
+        )
+    }
+}
+
+/// Apple Accelerate implementation of real matrix-vector product.
+///
+/// Uses cblas_dgemv which leverages the AMX coprocessor on Apple Silicon.
+/// Expects row-major matrix layout.
+#[cfg(all(target_os = "macos", feature = "accelerate"))]
+#[inline]
+pub fn real_matvec_accelerate(matrix: &[f64], n: usize, x: &[f64], y: &mut [f64]) {
+    if n == 0 {
+        return;
+    }
+    unsafe {
+        cblas_dgemv(
+            CBLAS_ROW_MAJOR,
+            CBLAS_NO_TRANS,
+            n as i32,      // m: number of rows
+            n as i32,      // n: number of columns
+            1.0,           // alpha
+            matrix.as_ptr(),
+            n as i32,      // lda: leading dimension
+            x.as_ptr(),
+            1,             // incx
+            0.0,           // beta (y = alpha*A*x + beta*y, so beta=0 means y = A*x)
+            y.as_mut_ptr(),
+            1,             // incy
+        );
+    }
+}
+
 /// Compute real matrix-vector product: y = A * x
 ///
 /// # Panics
@@ -45,6 +140,12 @@ pub fn real_matvec(matrix: &[f64], n: usize, x: &[f64], y: &mut [f64], capabilit
     assert_eq!(matrix.len(), n * n, "Matrix size mismatch");
     assert_eq!(x.len(), n, "Input vector size mismatch");
     assert_eq!(y.len(), n, "Output vector size mismatch");
+
+    #[cfg(all(target_os = "macos", feature = "accelerate"))]
+    if matches!(capability, SimdCapability::Accelerate) {
+        real_matvec_accelerate(matrix, n, x, y);
+        return;
+    }
 
     for (i, yi) in y.iter_mut().enumerate() {
         let row_start = i * n;
