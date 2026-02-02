@@ -10,6 +10,7 @@ members = [
     "crates/spicier-backend-cpu",
     "crates/spicier-backend-cuda",
     "crates/spicier-backend-metal",
+    "crates/spicier-backend-mps",
     "crates/spicier-batched-sweep",
     "crates/spicier-cli",
     "crates/spicier-validate",
@@ -33,6 +34,7 @@ spicier-parser = { path = "crates/spicier-parser", version = "0.1.0" }
 spicier-backend-cpu = { path = "crates/spicier-backend-cpu", version = "0.1.0" }
 spicier-backend-cuda = { path = "crates/spicier-backend-cuda", version = "0.1.0" }
 spicier-backend-metal = { path = "crates/spicier-backend-metal", version = "0.1.0" }
+spicier-backend-mps = { path = "crates/spicier-backend-mps", version = "0.1.0" }
 spicier-batched-sweep = { path = "crates/spicier-batched-sweep", version = "0.1.0" }
 
 # Error handling
@@ -44,6 +46,10 @@ nalgebra = "0.33"
 num-complex = "0.4"
 num-traits = "0.2"
 faer = "0.24"
+
+# Apple Accelerate (macOS only) - for future use
+# Note: nalgebra-lapack integration blocked by lapack-src version conflicts
+# accelerate-src = "0.3"
 
 # Collections
 indexmap = "2"
