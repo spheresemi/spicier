@@ -5,8 +5,10 @@
 //! - Device evaluation kernels (MOSFET, diode, BJT) for massively parallel sweeps
 //! - Matrix assembly kernels for parallel stamping across sweep points
 //! - Batched sparse matrix-vector multiplication for iterative solvers
+//! - Batched GMRES iterative solver for parallel sweeps
 
 mod batch_layout;
+pub mod batched_gmres;
 pub mod batched_lu;
 pub mod batched_spmv;
 pub mod context;
@@ -24,6 +26,7 @@ pub use device_eval::{
     BjtEvalResult, DiodeEvalResult, GpuBjtEvaluator, GpuBjtParams, GpuDiodeEvaluator,
     GpuDiodeParams, GpuMosfetEvaluator, GpuMosfetParams, MosfetEvalResult,
 };
-pub use error::{Result, WgpuError};
+pub use batched_gmres::{BatchedGmresConfig, BatchedGmresResult, GpuBatchedGmres, GpuBatchedVectorOps};
 pub use batched_spmv::{BatchedCsrMatrix, GpuBatchedSpmv};
+pub use error::{Result, WgpuError};
 pub use matrix_assembly::{ConductanceStamp, CurrentStamp, GpuMatrixAssembler, GpuRhsAssembler};
