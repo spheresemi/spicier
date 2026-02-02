@@ -89,39 +89,67 @@ Compatibility with existing SPICE netlists is a **goal**, not a constraint.
 
 ## Status
 
-**Active development — full analysis suite functional**
+**Active development — full analysis suite functional with GPU acceleration**
 
-Completed:
-* Cargo workspace with 9 crates (core, solver, devices, parser, cli, simd, backend-cpu, backend-cuda, backend-metal)
-* Circuit graph representation with MNA matrix stamping
-* Device models: R, L, C, V, I (passive + sources) with MNA stamps
-* Nonlinear devices: Diode (Shockley equation), MOSFET Level 1 (NMOS/PMOS)
-* Controlled sources: VCVS (E), VCCS (G), CCCS (F), CCVS (H) with MNA stamps
-* Behavioral sources (B elements) with arbitrary expression parsing (V(node), I(device), time, math functions)
-* Dense linear solver (LU decomposition) — real and complex
-* Sparse linear solver (faer LU) — real and complex, auto-selected for systems with 50+ variables
-* Newton-Raphson nonlinear solver with convergence criteria, voltage limiting, source stepping, Gmin stepping
-* Nonlinear DC operating point via Newton-Raphson (auto-dispatched when diodes/MOSFETs present)
-* SPICE netlist parser (R, C, L, V, I, D, M, E, G, F, H, B elements; .SUBCKT/.ENDS; .MODEL; SI suffixes)
-* DC operating point analysis (.OP) with CLI integration
-* Transient analysis (.TRAN) — Backward Euler, Trapezoidal, and TR-BDF2 integration with adaptive timestep
-* AC small-signal analysis (.AC) — Linear, Decade, and Octave sweeps with automatic linearization
-* DC sweep analysis (.DC) with single and nested sweep variables for I-V curve tracing
-* Initial conditions (.IC) with UIC option to skip DC operating point
-* .PRINT command support (V, I, VM, VP, VDB, VR, VI output variables)
-* SIMD-accelerated dot products and matvec (AVX-512/AVX2/scalar with runtime detection)
-* Batched device evaluation for diodes and MOSFETs (SoA layout, AVX2 kernels)
-* GMRES iterative solver with Jacobi preconditioner for large systems
-* Compute backend abstraction (CPU, CUDA, Metal) with automatic detection
-* Validation test suite with JSON golden data infrastructure (30 validation tests against analytical solutions and ngspice)
-* 335 tests passing, clippy clean
-* GitHub Actions CI (Linux, macOS, Windows), benchmarking infrastructure
+### Core Simulation
 
-In progress:
-* GPU-accelerated sparse solve for large circuits
-* Batched parameter sweeps on GPU (Monte Carlo, corners)
+* **Circuit Representation**: MNA matrix stamping with automatic ground node handling
+* **Device Models**: R, L, C, V, I (passive + sources), Diode (Shockley), MOSFET Level 1 (NMOS/PMOS)
+* **Controlled Sources**: VCVS (E), VCCS (G), CCCS (F), CCVS (H)
+* **Behavioral Sources**: B elements with expression parsing (V(node), I(device), time, math functions)
+* **Subcircuits**: Hierarchical .SUBCKT/.ENDS with nested expansion
 
-Expect sharp edges, incomplete features, and rapid iteration.
+### Analysis Types
+
+* **DC Operating Point** (.OP) — Newton-Raphson with voltage limiting, source stepping, Gmin stepping
+* **Transient** (.TRAN) — Backward Euler, Trapezoidal, TR-BDF2 with adaptive timestep
+* **AC Small-Signal** (.AC) — Linear, Decade, Octave sweeps with automatic linearization
+* **DC Sweep** (.DC) — Single and nested sweep variables for I-V curves
+* **Initial Conditions** (.IC) with UIC option
+
+### Linear Solvers
+
+* **Dense LU** — Real and complex, nalgebra-based
+* **Sparse LU** — faer-based, auto-selected for 50+ variables
+* **GMRES** — Iterative with Jacobi preconditioner for large systems
+* **Accelerate** — Apple's optimized LAPACK on macOS
+
+### GPU & Parallel Acceleration
+
+* **Batched Sweep Solving** — Monte Carlo, corner analysis, parameter sweeps
+* **Multiple Backends**:
+  - CUDA (NVIDIA GPUs via cuSOLVER)
+  - Metal (Apple GPUs via wgpu compute shaders)
+  - MPS (Apple Metal Performance Shaders)
+  - Accelerate (Apple optimized LAPACK)
+  - Faer (high-performance SIMD CPU)
+  - Parallel CPU (rayon + Accelerate/nalgebra)
+* **GPU-Side RNG** — Hash-based stateless random number generation
+* **GPU-Side Statistics** — Parallel reduction for sweep analysis
+* **Early Termination** — Convergence tracking for batched Newton-Raphson
+* **Memory Optimization** — Warp-aligned layouts, symbolic factorization caching
+
+### Infrastructure
+
+* **Cargo workspace**: 13 crates (core, solver, devices, parser, cli, simd, validate, backend-cpu, backend-cuda, backend-metal, backend-mps, batched-sweep)
+* **SPICE Parser**: R, C, L, V, I, D, M, E, G, F, H, B elements; .MODEL; SI suffixes
+* **Validation Suite**: 40+ tests against analytical solutions and ngspice
+* **~400 tests passing**, clippy clean
+* **GitHub Actions CI** (Linux, macOS, Windows)
+* **Criterion benchmarks** for all performance-critical paths
+
+### Performance Notes
+
+On Apple Silicon (M3 Ultra), parallel CPU sweeps using Accelerate + rayon outperform GPU for batched LU solving by 3-13x due to:
+- f64→f32 conversion overhead (Metal lacks native f64)
+- Excellent CPU LAPACK optimization on Apple Silicon
+- LU factorization's inherently sequential pivot selection
+
+GPU acceleration remains beneficial for:
+- NVIDIA GPUs with native f64 support
+- Device evaluation (embarrassingly parallel)
+- Statistics and reduction operations
+- Platforms without fast CPU LAPACK
 
 ---
 
@@ -200,46 +228,65 @@ Spicier exists to explore what becomes possible when these constraints are remov
 
 ## Roadmap
 
-This roadmap emphasizes **differentiation from Spice21** by focusing on performance architecture, solver design, and execution backends.
+### Completed Phases
 
-### Phase 0 — Foundations ✅
+#### Phase 0-6 — Core Simulation ✅
 
-* Core circuit graph and MNA representation
-* Explicit data layouts designed for vectorization
-* Deterministic, testable stamping and assembly
-* Clear separation of:
-  * Graph construction
-  * Device evaluation
-  * Solver execution
+* Circuit graph and MNA representation
+* Device models (R, L, C, V, I, Diode, MOSFET, controlled sources, B elements)
+* Newton-Raphson nonlinear solver with convergence aids
+* DC, AC, Transient, DC Sweep analysis
+* SPICE netlist parser with subcircuit support
+* Dense and sparse linear solvers
 
-### Phase 1 — CPU Performance
+#### Phase 7-8 — CPU Performance ✅
 
-* SIMD-friendly device model evaluation
-* Batched Newton-Raphson iterations
-* Parallel matrix assembly
-* Pluggable linear solvers (dense + sparse) ✅ (faer sparse LU integrated)
-* Performance benchmarking against ngspice
+* SIMD-accelerated operations (AVX-512/AVX2 with runtime detection)
+* Batched device evaluation (SoA layout)
+* Sparse solver auto-selection (faer LU for 50+ nodes)
+* Apple Accelerate integration for macOS
+* Parallel CPU sweeps with rayon
 
-### Phase 2 — GPU Acceleration
+#### Phase 9a-9b — GPU Acceleration ✅
 
-* GPU-backed matrix assembly experiments
-* Accelerator-friendly nonlinear solve workflows
-* Investigation of hybrid CPU/GPU execution
-* Focus on throughput for large sweeps and Monte Carlo runs
+* Multi-backend batched sweep solving (CUDA, Metal, MPS, Accelerate, Faer)
+* GPU-side random number generation (hash-based, stateless)
+* GPU-side statistics (parallel reduction)
+* Memory layout optimization (warp-aligned padding)
+* Shared sparsity structure caching
+* Convergence tracking for early termination
+* Pipelined assembly/solve execution
 
-### Phase 3 — Compatibility Layer
+### In Progress
 
-* Pragmatic SPICE netlist ingestion
-* Compatibility modes where feasible
-* Clear documentation of intentional deviations
-* Tooling to compare results against ngspice
+#### Phase 9c — GPU-Native Parallel Sweeps
 
-### Phase 4 — Advanced Models & Methods
+* GPU device evaluation kernels (MOSFET, Diode, BJT)
+* GPU matrix assembly with parallel stamping
+* Batched GMRES iterative solver
+* Full Newton-Raphson loop on GPU
 
-* Physics-based / numerical device models
-* Mixed-level simulation hooks
-* Solver experimentation (matrix-free, domain decomposition, etc.)
-* Research-driven features enabled by the new architecture
+#### Phase 10 — Cross-Simulator Validation ✅
+
+* JSON golden data infrastructure
+* Automated ngspice comparison
+* 40+ validation tests
+
+#### Phase 11 — Release Preparation
+
+* API stabilization
+* Documentation
+* Performance benchmarks
+* crates.io publication
+
+### Future
+
+#### Phase 12 — Extended Features
+
+* Noise analysis
+* Additional device models (BJT, JFET, BSIM)
+* Mutual inductance (K element)
+* .PARAM / .MEASURE support
 
 ---
 
