@@ -29,6 +29,8 @@ pub fn complex_conjugate_dot_product(a: &[C64], b: &[C64], capability: SimdCapab
             // SAFETY: AVX2+FMA availability verified via is_x86_feature_detected in detect()
             unsafe { conjugate_dot_avx2(a, b) }
         }
+        #[cfg(all(target_os = "macos", feature = "accelerate"))]
+        SimdCapability::Accelerate => conjugate_dot_scalar(a, b), // TODO: implement with vDSP
         SimdCapability::Scalar => conjugate_dot_scalar(a, b),
     }
 }

@@ -21,6 +21,8 @@ pub fn complex_dot_product(a: &[C64], b: &[C64], capability: SimdCapability) -> 
         SimdCapability::Avx512 => unsafe { complex_dot_avx512(a, b) },
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         SimdCapability::Avx2 => unsafe { complex_dot_avx2(a, b) },
+        #[cfg(all(target_os = "macos", feature = "accelerate"))]
+        SimdCapability::Accelerate => complex_dot_scalar(a, b), // TODO: implement with vDSP
         SimdCapability::Scalar => complex_dot_scalar(a, b),
     }
 }

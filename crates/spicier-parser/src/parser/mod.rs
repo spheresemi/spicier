@@ -62,6 +62,8 @@ pub(crate) struct Parser<'a> {
     pub(crate) subcircuits: HashMap<String, SubcircuitDef>,
     /// Current subcircuit being parsed (None if at top level).
     pub(crate) current_subckt: Option<SubcircuitDef>,
+    /// Parameters from .PARAM commands (stored as uppercase keys).
+    pub(crate) parameters: HashMap<String, f64>,
 }
 
 impl<'a> Parser<'a> {
@@ -84,6 +86,7 @@ impl<'a> Parser<'a> {
             models: HashMap::new(),
             subcircuits: HashMap::new(),
             current_subckt: None,
+            parameters: HashMap::new(),
         }
     }
 
@@ -93,6 +96,36 @@ impl<'a> Parser<'a> {
         if let Some(title) = self.parse_title() {
             self.netlist = Netlist::with_title(title);
         }
+
+        // Two-pass parsing to handle forward model references and parameters:
+        // Pass 1: Scan for all .MODEL and .PARAM commands first
+        let saved_pos = self.pos;
+        while !self.is_at_end() {
+            self.skip_eol();
+            if self.is_at_end() {
+                break;
+            }
+
+            if let Token::Command(cmd) = self.peek() {
+                // Note: Token::Command stores command without the leading dot
+                if cmd == "MODEL" {
+                    self.advance(); // consume .MODEL
+                    let line = self.current_line();
+                    self.parse_model_command(line)?;
+                } else if cmd == "PARAM" {
+                    self.advance(); // consume .PARAM
+                    let line = self.current_line();
+                    self.parse_param_command(line)?;
+                } else {
+                    self.skip_to_eol();
+                }
+            } else {
+                self.skip_to_eol();
+            }
+        }
+
+        // Reset position and parse everything
+        self.pos = saved_pos;
 
         while !self.is_at_end() {
             self.skip_eol();
@@ -121,6 +154,7 @@ impl<'a> Parser<'a> {
             node_map: self.node_map,
             print_commands: self.print_commands,
             subcircuits: self.subcircuits,
+            parameters: self.parameters,
         })
     }
 
@@ -225,12 +259,22 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Resolve a value string: first try numeric parsing, then parameter lookup.
+    pub(crate) fn resolve_value(&self, s: &str) -> Option<f64> {
+        // First try direct numeric parsing
+        if let Some(val) = parse_value(s) {
+            return Some(val);
+        }
+        // Then try parameter lookup (case-insensitive)
+        self.parameters.get(&s.to_uppercase()).copied()
+    }
+
     pub(crate) fn expect_value(&mut self, line: usize) -> Result<f64> {
         match self.peek() {
             Token::Value(v) | Token::Name(v) => {
                 let v = v.clone();
                 self.advance();
-                parse_value(&v).ok_or(Error::InvalidValue(v))
+                self.resolve_value(&v).ok_or(Error::InvalidValue(v))
             }
             _ => Err(Error::ParseError {
                 line,
@@ -243,7 +287,7 @@ impl<'a> Parser<'a> {
         match self.peek() {
             Token::Value(v) | Token::Name(v) => {
                 let v = v.clone();
-                if let Some(val) = parse_value(&v) {
+                if let Some(val) = self.resolve_value(&v) {
                     self.advance();
                     Some(val)
                 } else {
@@ -259,7 +303,7 @@ impl<'a> Parser<'a> {
         match self.peek() {
             Token::Value(s) => {
                 let s = s.clone();
-                if let Some(v) = parse_value(&s) {
+                if let Some(v) = self.resolve_value(&s) {
                     self.advance();
                     Some(v)
                 } else {
@@ -820,5 +864,112 @@ X1 1 2 VDIV
 
         // Check netlist has expanded devices: V1, X1.R1, X1.R2
         assert_eq!(result.netlist.num_devices(), 3);
+    }
+
+    #[test]
+    fn test_parse_param_simple() {
+        let input = r#"Param Test
+.PARAM R_val=1k
+R1 1 0 R_val
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert_eq!(result.parameters.len(), 1);
+        assert!((result.parameters["R_VAL"] - 1000.0).abs() < 1e-10);
+        assert_eq!(result.netlist.num_devices(), 1);
+    }
+
+    #[test]
+    fn test_parse_param_multiple_on_line() {
+        let input = r#"Multiple Params
+.PARAM R_val=1k C_val=10u V_val=5
+R1 1 2 R_val
+C1 2 0 C_val
+V1 1 0 V_val
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert_eq!(result.parameters.len(), 3);
+        assert!((result.parameters["R_VAL"] - 1000.0).abs() < 1e-10);
+        assert!((result.parameters["C_VAL"] - 10e-6).abs() < 1e-12);
+        assert!((result.parameters["V_VAL"] - 5.0).abs() < 1e-10);
+        assert_eq!(result.netlist.num_devices(), 3);
+    }
+
+    #[test]
+    fn test_parse_param_with_si_suffix() {
+        let input = r#"SI Suffix Test
+.PARAM freq=1MEG cap=100p ind=10n
+R1 1 0 1k
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert!((result.parameters["FREQ"] - 1e6).abs() < 1e-4);
+        assert!((result.parameters["CAP"] - 100e-12).abs() < 1e-18);
+        assert!((result.parameters["IND"] - 10e-9).abs() < 1e-15);
+    }
+
+    #[test]
+    fn test_parse_param_case_insensitive() {
+        let input = r#"Case Test
+.PARAM MyValue=100
+R1 1 0 myvalue
+R2 2 0 MYVALUE
+R3 3 0 MyValue
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert_eq!(result.parameters.len(), 1);
+        assert!((result.parameters["MYVALUE"] - 100.0).abs() < 1e-10);
+        assert_eq!(result.netlist.num_devices(), 3);
+    }
+
+    #[test]
+    fn test_parse_param_in_various_elements() {
+        let input = r#"Param Elements Test
+.PARAM R=1k C=1u L=1m V=5 I=10m
+R1 1 2 R
+C1 2 0 C
+L1 1 3 L
+V1 1 0 V
+I1 0 2 I
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert_eq!(result.netlist.num_devices(), 5);
+    }
+
+    #[test]
+    fn test_parse_param_multiple_lines() {
+        let input = r#"Multi Line Param Test
+.PARAM R1_val=1k
+.PARAM R2_val=2k
+R1 1 2 R1_val
+R2 2 0 R2_val
+V1 1 0 10
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert_eq!(result.parameters.len(), 2);
+        assert!((result.parameters["R1_VAL"] - 1000.0).abs() < 1e-10);
+        assert!((result.parameters["R2_VAL"] - 2000.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_parse_param_spaces_around_equals() {
+        let input = r#"Spaces Test
+.PARAM R_val = 1k
+R1 1 0 R_val
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert!((result.parameters["R_VAL"] - 1000.0).abs() < 1e-10);
     }
 }

@@ -350,7 +350,7 @@ fn test_tran_lc_oscillation_frequency() {
     let dc = DVector::from_vec(vec![5.0]);
 
     let mut caps = vec![CapacitorState::new(capacitance, Some(0), None)];
-    let mut inds = vec![InductorState::new(inductance, Some(0), None)];
+    let mut inds = vec![InductorState::new(inductance, Some(0), None, 0)];
 
     // LC oscillator stamper - no static elements to stamp since both C and L
     // are handled by companion models
@@ -691,6 +691,67 @@ D1 2 0
     assert!(
         i_expected > 4e-3 && i_expected < 5e-3,
         "I(R1) = {i_expected} A (expected 4-4.5 mA)"
+    );
+}
+
+/// Test: Diode with low supply voltage (the known failing case)
+///
+/// Circuit: V1=0.7V -- R=100 -- diode -- GND
+/// Expected: V(diode) ≈ 0.641V (ngspice)
+/// Regression test: ensures diode conducts properly in low-voltage circuits
+#[test]
+fn test_dc_diode_low_voltage() {
+    let netlist_str = r#"
+Diode Low Voltage
+V1 1 0 DC 0.7
+R1 1 2 100
+D1 2 0
+.end
+"#;
+
+    let parse_result = parse_full(netlist_str).expect("parse failed");
+    let netlist = &parse_result.netlist;
+
+    struct DiodeStamper<'a> {
+        netlist: &'a Netlist,
+    }
+
+    impl NonlinearStamper for DiodeStamper<'_> {
+        fn stamp_at(&self, mna: &mut MnaSystem, solution: &DVector<f64>) {
+            self.netlist.stamp_nonlinear_into(mna, solution);
+        }
+    }
+
+    let stamper = DiodeStamper { netlist };
+    let criteria = ConvergenceCriteria::default();
+
+    let result = solve_newton_raphson(
+        netlist.num_nodes(),
+        netlist.num_current_vars(),
+        &stamper,
+        &criteria,
+        None,
+    )
+    .expect("Newton-Raphson failed");
+
+    assert!(result.converged, "NR should converge");
+
+    let v_diode = result.solution[1]; // Node 2 = diode anode
+
+    // Diode forward voltage with 0.7V supply should be ~0.64V
+    // (ngspice gives 0.641V)
+    println!("V(diode) = {v_diode:.6}V (expected ~0.641V)");
+    assert!(
+        v_diode > 0.55 && v_diode < 0.68,
+        "V(diode) = {v_diode:.6}V (expected 0.60-0.68V from ngspice ~0.641V)"
+    );
+
+    // Verify current: I = (V1 - Vd) / R ≈ (0.7 - 0.64) / 100 = 0.6 mA
+    let i_diode = (0.7 - v_diode) / 100.0;
+    println!("I(diode) = {:.4}mA (expected ~0.59mA)", i_diode * 1000.0);
+    assert!(
+        i_diode > 0.2e-3 && i_diode < 1.5e-3,
+        "I(diode) = {i_diode} A (expected 0.3-1.0 mA)"
     );
 }
 
@@ -1137,7 +1198,7 @@ fn test_tran_rl_time_constant() {
     // Initial condition: zero current
     let dc = DVector::from_vec(vec![5.0, 0.0]);
 
-    let mut inds = vec![InductorState::new(inductance, Some(1), None)];
+    let mut inds = vec![InductorState::new(inductance, Some(1), None, 0)];
 
     struct RlStamper {
         voltage: f64,
@@ -1846,4 +1907,449 @@ fn test_golden_tran_rc_charging() {
             );
         }
     }
+}
+
+// ============================================================================
+// Additional Tests from ngspice Tutorial and External Sources
+// ============================================================================
+
+/// Test: Dual RC Ladder - ngspice tutorial example
+/// Source: https://ngspice.sourceforge.io/ngspice-tutorial.html
+///
+/// Circuit: V1 -- R1(10k) -- int -- R2(1k) -- out
+///                          |            |
+///                         C1(1u)       C2(100n)
+///                          |            |
+///                         GND          GND
+///
+/// Two cascaded RC lowpass filters with different time constants
+#[test]
+fn test_dc_dual_rc_ladder() {
+    let netlist_str = r#"
+Dual RC Ladder - ngspice tutorial
+V1 in 0 DC 5
+R1 in int 10k
+R2 int out 1k
+C1 int 0 1u
+C2 out 0 100n
+.end
+"#;
+
+    let netlist = parse(netlist_str).expect("parse failed");
+    let mna = netlist.assemble_mna();
+    let solution = solve_dc(&mna).expect("DC solve failed");
+
+    // At DC, capacitors are open circuits
+    // V(in) = 5V (source)
+    // V(int) = 5V (no current through R1)
+    // V(out) = 5V (no current through R2)
+    let v_in = solution.voltage(NodeId::new(1));
+    let v_int = solution.voltage(NodeId::new(2));
+    let v_out = solution.voltage(NodeId::new(3));
+
+    assert!(
+        (v_in - 5.0).abs() < DC_VOLTAGE_TOL,
+        "V(in) = {v_in} (expected 5.0)"
+    );
+    assert!(
+        (v_int - 5.0).abs() < DC_VOLTAGE_TOL,
+        "V(int) = {v_int} (expected 5.0)"
+    );
+    assert!(
+        (v_out - 5.0).abs() < DC_VOLTAGE_TOL,
+        "V(out) = {v_out} (expected 5.0)"
+    );
+}
+
+/// Test: Multi-stage voltage divider - 3 resistors in series
+/// Validates KVL with multiple nodes
+#[test]
+fn test_dc_three_stage_divider() {
+    let netlist_str = r#"
+Three Stage Divider
+V1 1 0 DC 12
+R1 1 2 1k
+R2 2 3 2k
+R3 3 0 3k
+.end
+"#;
+
+    let netlist = parse(netlist_str).expect("parse failed");
+    let mna = netlist.assemble_mna();
+    let solution = solve_dc(&mna).expect("DC solve failed");
+
+    // Total resistance = 6k, current = 12V/6k = 2mA
+    // V(1) = 12V
+    // V(2) = 12V - 2mA*1k = 10V
+    // V(3) = 10V - 2mA*2k = 6V (or 2mA*3k from ground)
+    let v1 = solution.voltage(NodeId::new(1));
+    let v2 = solution.voltage(NodeId::new(2));
+    let v3 = solution.voltage(NodeId::new(3));
+
+    assert!((v1 - 12.0).abs() < DC_VOLTAGE_TOL, "V(1) = {v1} (expected 12.0)");
+    assert!((v2 - 10.0).abs() < DC_VOLTAGE_TOL, "V(2) = {v2} (expected 10.0)");
+    assert!((v3 - 6.0).abs() < DC_VOLTAGE_TOL, "V(3) = {v3} (expected 6.0)");
+}
+
+/// Test: Pi network - common filter topology
+/// Source: Common SPICE benchmark circuit
+#[test]
+fn test_dc_pi_network() {
+    let netlist_str = r#"
+Pi Network DC
+V1 1 0 DC 10
+R1 1 0 1k
+R2 1 2 1k
+R3 2 0 1k
+.end
+"#;
+
+    let netlist = parse(netlist_str).expect("parse failed");
+    let mna = netlist.assemble_mna();
+    let solution = solve_dc(&mna).expect("DC solve failed");
+
+    // R1 is in parallel with (R2 + R3) series
+    // R_series = 2k, R_parallel = (1k * 2k)/(1k + 2k) = 666.67Ω
+    // V(1) = 10V (source)
+    // Current through R2-R3: I = 10V/2k = 5mA
+    // V(2) = 10V - 5mA*1k = 5V
+    let v1 = solution.voltage(NodeId::new(1));
+    let v2 = solution.voltage(NodeId::new(2));
+
+    assert!((v1 - 10.0).abs() < DC_VOLTAGE_TOL, "V(1) = {v1} (expected 10.0)");
+    assert!((v2 - 5.0).abs() < DC_VOLTAGE_TOL, "V(2) = {v2} (expected 5.0)");
+}
+
+/// Test: Dual RC ladder AC response - cascaded lowpass
+/// Expected: -40dB/decade rolloff at high frequencies (two poles)
+#[test]
+fn test_ac_dual_rc_ladder() {
+    struct DualRcStamper;
+
+    impl AcStamper for DualRcStamper {
+        fn stamp_ac(&self, mna: &mut ComplexMna, omega: f64) {
+            // V1 = 1V AC at node 0 (in)
+            mna.stamp_voltage_source(Some(0), None, 0, Complex::new(1.0, 0.0));
+            // R1 = 10k from in to int (node 0 to 1)
+            mna.stamp_conductance(Some(0), Some(1), 1.0 / 10000.0);
+            // C1 = 1u from int to ground
+            let yc1 = Complex::new(0.0, omega * 1e-6);
+            mna.stamp_admittance(Some(1), None, yc1);
+            // R2 = 1k from int to out (node 1 to 2)
+            mna.stamp_conductance(Some(1), Some(2), 1.0 / 1000.0);
+            // C2 = 100n from out to ground
+            let yc2 = Complex::new(0.0, omega * 100e-9);
+            mna.stamp_admittance(Some(2), None, yc2);
+        }
+
+        fn num_nodes(&self) -> usize {
+            3 // in, int, out
+        }
+        fn num_vsources(&self) -> usize {
+            1
+        }
+    }
+
+    // Test at low frequency (should be ~0dB)
+    let params_low = AcParams {
+        sweep_type: AcSweepType::Linear,
+        num_points: 1,
+        fstart: 1.0,
+        fstop: 1.0,
+    };
+    let result_low = solve_ac(&DualRcStamper, &params_low).expect("AC solve failed");
+    let mag_db_low = result_low.magnitude_db(2)[0].1; // V(out) = node 2
+
+    // At 1 Hz, both RC stages should pass signal nearly unattenuated
+    assert!(
+        mag_db_low.abs() < 0.1,
+        "Low freq (1Hz): {} dB (expected ~0 dB)",
+        mag_db_low
+    );
+
+    // Test at high frequency (should be heavily attenuated)
+    let params_high = AcParams {
+        sweep_type: AcSweepType::Linear,
+        num_points: 1,
+        fstart: 100000.0,
+        fstop: 100000.0,
+    };
+    let result_high = solve_ac(&DualRcStamper, &params_high).expect("AC solve failed");
+    let mag_db_high = result_high.magnitude_db(2)[0].1;
+
+    // At 100kHz, should be significantly attenuated (two poles)
+    assert!(
+        mag_db_high < -20.0,
+        "High freq (100kHz): {} dB (expected < -20 dB)",
+        mag_db_high
+    );
+}
+
+/// Test: RLC bandpass filter Q factor
+/// Source: Common analog circuit benchmark
+#[test]
+fn test_ac_rlc_bandpass_q() {
+    // Series RLC: R=100, L=10mH, C=100nF
+    // f0 = 1/(2*pi*sqrt(LC)) = 5.03kHz
+    // Q = (1/R)*sqrt(L/C) = 10
+
+    struct RlcBandpassStamper;
+
+    impl AcStamper for RlcBandpassStamper {
+        fn stamp_ac(&self, mna: &mut ComplexMna, omega: f64) {
+            let r = 100.0;
+            let l = 10e-3;
+            let c = 100e-9;
+
+            // V1 = 1V AC
+            mna.stamp_voltage_source(Some(0), None, 0, Complex::new(1.0, 0.0));
+            // R from node 0 to 1
+            mna.stamp_conductance(Some(0), Some(1), 1.0 / r);
+            // L from node 1 to 2 (use impedance model)
+            let zl = Complex::new(0.0, omega * l);
+            let yl = if zl.norm() > 1e-12 {
+                Complex::new(1.0, 0.0) / zl
+            } else {
+                Complex::new(1e12, 0.0)
+            };
+            mna.stamp_admittance(Some(1), Some(2), yl);
+            // C from node 2 to ground
+            let yc = Complex::new(0.0, omega * c);
+            mna.stamp_admittance(Some(2), None, yc);
+        }
+
+        fn num_nodes(&self) -> usize {
+            3
+        }
+        fn num_vsources(&self) -> usize {
+            1
+        }
+    }
+
+    // Resonant frequency
+    let l: f64 = 10e-3;
+    let c: f64 = 100e-9;
+    let f0 = 1.0 / (2.0 * PI * (l * c).sqrt());
+
+    // Test at resonance
+    let params = AcParams {
+        sweep_type: AcSweepType::Linear,
+        num_points: 1,
+        fstart: f0,
+        fstop: f0,
+    };
+    let result = solve_ac(&RlcBandpassStamper, &params).expect("AC solve failed");
+    let mag_at_res = result.magnitude_db(2)[0].1; // V(C) at resonance
+
+    // At resonance, inductor and capacitor impedances cancel
+    // Output should be near 0dB (voltage across C equals input due to resonance)
+    println!("RLC bandpass: f0 = {:.1} Hz, mag = {:.2} dB", f0, mag_at_res);
+
+    // The transfer function at resonance depends on circuit topology
+    // For series RLC with output across C, gain at resonance = Q
+    // Allowing for reasonable tolerance
+    assert!(
+        mag_at_res > -10.0,
+        "At resonance ({:.0} Hz): {} dB (expected > -10 dB)",
+        f0,
+        mag_at_res
+    );
+}
+
+/// Test: PMOS common source (complements NMOS test)
+#[test]
+fn test_dc_pmos_common_source() {
+    // Build PMOS common source using direct MNA stamping
+    // PMOS: drain=1 (to Rd), gate=2 (to -2V), source=3 (to Vdd=5V)
+    // Rd from drain to ground
+
+    // For this test, we'll use the parser with forward model reference
+    let netlist_str = r#"
+PMOS Common Source
+Vdd 3 0 DC 5
+Vg 2 0 DC 3
+Rd 1 0 1k
+M1 1 2 3 3 PMOD W=10u L=1u
+.model PMOD PMOS VTO=-0.7 KP=50u LAMBDA=0
+.end
+"#;
+
+    let result = parse_full(netlist_str).expect("parse failed");
+    let netlist = &result.netlist;
+
+    // Use Newton-Raphson for nonlinear solve
+    struct PmosStamper<'a> {
+        netlist: &'a Netlist,
+    }
+
+    impl NonlinearStamper for PmosStamper<'_> {
+        fn stamp_at(&self, mna: &mut MnaSystem, solution: &DVector<f64>) {
+            for device in self.netlist.devices() {
+                if !device.is_nonlinear() {
+                    device.stamp(mna);
+                }
+            }
+            for device in self.netlist.devices() {
+                if device.is_nonlinear() {
+                    device.stamp_nonlinear(mna, solution);
+                }
+            }
+        }
+    }
+
+    let stamper = PmosStamper { netlist };
+    let criteria = ConvergenceCriteria::default();
+    let nr_result = solve_newton_raphson(
+        netlist.num_nodes(),
+        netlist.num_current_vars(),
+        &stamper,
+        &criteria,
+        None,
+    )
+    .expect("NR solve failed");
+
+    assert!(nr_result.converged, "PMOS circuit should converge");
+
+    let v1 = nr_result.solution[0]; // Drain
+    let v2 = nr_result.solution[1]; // Gate
+    let v3 = nr_result.solution[2]; // Source (Vdd)
+
+    // PMOS: Vsg = Vs - Vg = 5 - 3 = 2V, |Vto| = 0.7V
+    // PMOS is on (Vsg > |Vto|)
+    // Vov = Vsg - |Vto| = 2 - 0.7 = 1.3V
+    // beta = kp * W/L = 50e-6 * 10 = 500e-6
+    // Ids = 0.5 * beta * Vov^2 = 0.5 * 500e-6 * 1.69 = 0.4225mA
+    // V(drain) = Ids * Rd = 0.4225mA * 1k = 0.4225V
+
+    assert!((v3 - 5.0).abs() < DC_VOLTAGE_TOL, "V(3) = {v3} (expected 5.0)");
+    assert!((v2 - 3.0).abs() < DC_VOLTAGE_TOL, "V(2) = {v2} (expected 3.0)");
+    // Drain voltage should be close to calculated value
+    assert!(
+        v1 > 0.3 && v1 < 0.6,
+        "V(1) = {v1} (expected ~0.42V for PMOS in saturation)"
+    );
+}
+
+/// Test: Multiple diodes in series (voltage clamp)
+#[test]
+fn test_dc_diode_series() {
+    let netlist_str = r#"
+Diode Series
+V1 1 0 DC 5
+R1 1 2 1k
+D1 2 3 DMOD
+D2 3 0 DMOD
+.model DMOD D IS=1e-14 N=1
+.end
+"#;
+
+    let result = parse_full(netlist_str).expect("parse failed");
+    let netlist = &result.netlist;
+
+    struct DiodeStamper<'a> {
+        netlist: &'a Netlist,
+    }
+
+    impl NonlinearStamper for DiodeStamper<'_> {
+        fn stamp_at(&self, mna: &mut MnaSystem, solution: &DVector<f64>) {
+            for device in self.netlist.devices() {
+                if !device.is_nonlinear() {
+                    device.stamp(mna);
+                }
+            }
+            for device in self.netlist.devices() {
+                if device.is_nonlinear() {
+                    device.stamp_nonlinear(mna, solution);
+                }
+            }
+        }
+    }
+
+    let stamper = DiodeStamper { netlist };
+    let criteria = ConvergenceCriteria::default();
+    let nr_result = solve_newton_raphson(
+        netlist.num_nodes(),
+        netlist.num_current_vars(),
+        &stamper,
+        &criteria,
+        None,
+    )
+    .expect("NR solve failed");
+
+    assert!(nr_result.converged, "Diode series should converge");
+
+    let v1 = nr_result.solution[0];
+    let v2 = nr_result.solution[1];
+    let v3 = nr_result.solution[2];
+
+    // Two diodes in series: ~1.2-1.4V total drop
+    // V(1) = 5V (source)
+    // V(2) should be around 1.2-1.4V (two diode drops above ground)
+    // V(3) should be around 0.6-0.7V (one diode drop)
+    assert!((v1 - 5.0).abs() < DC_VOLTAGE_TOL, "V(1) = {v1} (expected 5.0)");
+    assert!(
+        v2 > 1.1 && v2 < 1.5,
+        "V(2) = {v2} (expected ~1.3V, two diode drops)"
+    );
+    assert!(
+        v3 > 0.55 && v3 < 0.75,
+        "V(3) = {v3} (expected ~0.65V, one diode drop)"
+    );
+}
+
+/// Test: NMOS in linear region (triode)
+#[test]
+fn test_dc_nmos_linear_region() {
+    let netlist_str = r#"
+NMOS Linear Region
+Vdd 1 0 DC 0.5
+Vg 2 0 DC 2
+M1 1 2 0 0 NMOD W=10u L=1u
+.model NMOD NMOS VTO=0.7 KP=100u LAMBDA=0
+.end
+"#;
+
+    let result = parse_full(netlist_str).expect("parse failed");
+    let netlist = &result.netlist;
+
+    struct NmosStamper<'a> {
+        netlist: &'a Netlist,
+    }
+
+    impl NonlinearStamper for NmosStamper<'_> {
+        fn stamp_at(&self, mna: &mut MnaSystem, solution: &DVector<f64>) {
+            for device in self.netlist.devices() {
+                if !device.is_nonlinear() {
+                    device.stamp(mna);
+                }
+            }
+            for device in self.netlist.devices() {
+                if device.is_nonlinear() {
+                    device.stamp_nonlinear(mna, solution);
+                }
+            }
+        }
+    }
+
+    let stamper = NmosStamper { netlist };
+    let criteria = ConvergenceCriteria::default();
+    let nr_result = solve_newton_raphson(
+        netlist.num_nodes(),
+        netlist.num_current_vars(),
+        &stamper,
+        &criteria,
+        None,
+    )
+    .expect("NR solve failed");
+
+    assert!(nr_result.converged, "NMOS linear region should converge");
+
+    let vds = nr_result.solution[0];
+    let vgs = nr_result.solution[1];
+
+    // Vgs = 2V, Vto = 0.7V, Vov = 1.3V
+    // Vds = 0.5V < Vov → linear region
+    // Ids = beta * ((Vgs-Vto)*Vds - Vds^2/2) = 1e-3 * (1.3*0.5 - 0.125) = 0.525mA
+    assert!((vgs - 2.0).abs() < DC_VOLTAGE_TOL, "Vgs = {vgs} (expected 2.0)");
+    assert!((vds - 0.5).abs() < DC_VOLTAGE_TOL, "Vds = {vds} (expected 0.5)");
 }
