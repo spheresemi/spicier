@@ -12,7 +12,8 @@ use spicier_core::mna::MnaSystem;
 use spicier_core::netlist::{AcDeviceInfo, TransientDeviceInfo};
 use spicier_core::NodeId;
 use spicier_parser::{
-    AcSweepType, AnalysisCommand, InitialCondition, OutputVariable, PrintAnalysisType, parse_full,
+    AcSweepType, AnalysisCommand, DcSweepSpec, InitialCondition, OutputVariable, PrintAnalysisType,
+    parse_full,
 };
 use spicier_solver::{
     AcParams, AcStamper, AcSweepType as SolverAcSweepType, CapacitorState, ComplexMna,
@@ -157,8 +158,9 @@ fn run_simulation(input: &PathBuf, cli: &Cli, _backend: &ComputeBackend) -> Resu
                     .iter()
                     .map(|a| match a {
                         AnalysisCommand::Op => ".OP".to_string(),
-                        AnalysisCommand::Dc { source_name, .. } => {
-                            format!(".DC {}", source_name)
+                        AnalysisCommand::Dc { sweeps } => {
+                            let names: Vec<_> = sweeps.iter().map(|s| s.source_name.as_str()).collect();
+                            format!(".DC {}", names.join(", "))
                         }
                         AnalysisCommand::Ac { .. } => ".AC".to_string(),
                         AnalysisCommand::Tran { .. } => ".TRAN".to_string(),
@@ -195,14 +197,9 @@ fn run_simulation(input: &PathBuf, cli: &Cli, _backend: &ComputeBackend) -> Resu
                 let print_vars = get_print_vars(PrintAnalysisType::Dc);
                 run_dc_op(&netlist, &print_vars, &node_map)?;
             }
-            AnalysisCommand::Dc {
-                source_name,
-                start,
-                stop,
-                step,
-            } => {
+            AnalysisCommand::Dc { sweeps } => {
                 let print_vars = get_print_vars(PrintAnalysisType::Dc);
-                run_dc_sweep(&netlist, source_name, *start, *stop, *step, &print_vars, &node_map)?;
+                run_dc_sweep(&netlist, sweeps, &print_vars, &node_map)?;
             }
             AnalysisCommand::Ac {
                 sweep_type,
@@ -289,27 +286,46 @@ fn run_dc_op(
 
 fn run_dc_sweep(
     netlist: &spicier_core::Netlist,
-    source_name: &str,
-    start: f64,
-    stop: f64,
-    step: f64,
+    sweeps: &[DcSweepSpec],
     print_vars: &[&OutputVariable],
     node_map: &std::collections::HashMap<String, NodeId>,
 ) -> Result<()> {
-    println!("DC Sweep Analysis (.DC {} {} {} {})", source_name, start, stop, step);
+    if sweeps.is_empty() {
+        return Err(anyhow::anyhow!("No sweep specifications provided"));
+    }
+
+    if sweeps.len() == 1 {
+        // Single sweep
+        run_single_dc_sweep(netlist, &sweeps[0], print_vars, node_map)
+    } else {
+        // Nested sweep (2 variables)
+        run_nested_dc_sweep(netlist, &sweeps[0], &sweeps[1], print_vars, node_map)
+    }
+}
+
+fn run_single_dc_sweep(
+    netlist: &spicier_core::Netlist,
+    sweep: &DcSweepSpec,
+    print_vars: &[&OutputVariable],
+    node_map: &std::collections::HashMap<String, NodeId>,
+) -> Result<()> {
+    println!(
+        "DC Sweep Analysis (.DC {} {} {} {})",
+        sweep.source_name, sweep.start, sweep.stop, sweep.step
+    );
     println!("==========================================");
     println!();
 
     let stamper = NetlistSweepStamper {
         netlist,
-        source_name: source_name.to_string(),
+        source_name: sweep.source_name.clone(),
     };
 
     let params = DcSweepParams {
-        source_name: source_name.to_string(),
-        start,
-        stop,
-        step,
+        source_name: sweep.source_name.clone(),
+        start: sweep.start,
+        stop: sweep.stop,
+        step: sweep.step,
     };
 
     let result =
@@ -319,7 +335,7 @@ fn run_dc_sweep(
     let nodes_to_print = get_dc_print_nodes(print_vars, node_map, netlist.num_nodes());
 
     // Print header
-    print!("{:>12}", source_name);
+    print!("{:>12}", sweep.source_name);
     for (name, _) in &nodes_to_print {
         print!("{:>12}", format!("V({})", name));
     }
@@ -343,6 +359,119 @@ fn run_dc_sweep(
     println!("Sweep complete ({} points).", result.sweep_values.len());
     println!();
     Ok(())
+}
+
+/// Stamper for nested DC sweeps - stamps with two swept source values
+struct NestedSweepStamper<'a> {
+    netlist: &'a spicier_core::Netlist,
+    source_name1: String,
+    source_name2: String,
+}
+
+impl NestedSweepStamper<'_> {
+    fn stamp_with_two_sweeps(&self, mna: &mut MnaSystem, value1: f64, value2: f64) {
+        // First stamp all devices normally
+        self.netlist.stamp_into(mna);
+
+        // Then override both swept sources' values in the RHS
+        if let Some(idx1) = self.netlist.find_vsource_branch_index(&self.source_name1) {
+            let bi1 = self.netlist.num_nodes() + idx1;
+            mna.rhs_mut()[bi1] = value1;
+        }
+
+        if let Some(idx2) = self.netlist.find_vsource_branch_index(&self.source_name2) {
+            let bi2 = self.netlist.num_nodes() + idx2;
+            mna.rhs_mut()[bi2] = value2;
+        }
+    }
+}
+
+fn run_nested_dc_sweep(
+    netlist: &spicier_core::Netlist,
+    outer_sweep: &DcSweepSpec,
+    inner_sweep: &DcSweepSpec,
+    print_vars: &[&OutputVariable],
+    node_map: &std::collections::HashMap<String, NodeId>,
+) -> Result<()> {
+    println!(
+        "Nested DC Sweep Analysis (.DC {} {} {} {} {} {} {} {})",
+        outer_sweep.source_name, outer_sweep.start, outer_sweep.stop, outer_sweep.step,
+        inner_sweep.source_name, inner_sweep.start, inner_sweep.stop, inner_sweep.step
+    );
+    println!("==========================================");
+    println!();
+
+    // Generate sweep values for both sweeps
+    let outer_values = generate_sweep_values(outer_sweep);
+    let inner_values = generate_sweep_values(inner_sweep);
+
+    let stamper = NestedSweepStamper {
+        netlist,
+        source_name1: outer_sweep.source_name.clone(),
+        source_name2: inner_sweep.source_name.clone(),
+    };
+
+    // Determine which nodes to print
+    let nodes_to_print = get_dc_print_nodes(print_vars, node_map, netlist.num_nodes());
+
+    // Print header
+    print!("{:>12}{:>12}", outer_sweep.source_name, inner_sweep.source_name);
+    for (name, _) in &nodes_to_print {
+        print!("{:>12}", format!("V({})", name));
+    }
+    println!();
+
+    // Print separator
+    let width = 12 * (2 + nodes_to_print.len());
+    println!("{}", "-".repeat(width));
+
+    let mut total_points = 0;
+
+    // Nested sweep: outer loop is slow, inner loop is fast
+    for &outer_val in &outer_values {
+        for &inner_val in &inner_values {
+            // Stamp and solve for this combination
+            let mut mna = MnaSystem::new(netlist.num_nodes(), netlist.num_current_vars());
+            stamper.stamp_with_two_sweeps(&mut mna, outer_val, inner_val);
+
+            let sol = solve_dc(&mna).map_err(|e| anyhow::anyhow!("Solver error: {}", e))?;
+
+            // Print results
+            print!("{:>12.4}{:>12.4}", outer_val, inner_val);
+            for (_, node_id) in &nodes_to_print {
+                let v = sol.voltage(*node_id);
+                print!("{:>12.6}", v);
+            }
+            println!();
+
+            total_points += 1;
+        }
+    }
+
+    println!();
+    println!(
+        "Nested sweep complete ({} outer x {} inner = {} points).",
+        outer_values.len(),
+        inner_values.len(),
+        total_points
+    );
+    println!();
+    Ok(())
+}
+
+/// Generate sweep values for a DC sweep specification
+fn generate_sweep_values(sweep: &DcSweepSpec) -> Vec<f64> {
+    let mut values = Vec::new();
+    let direction = if sweep.step > 0.0 { 1.0 } else { -1.0 };
+    let mut value = sweep.start;
+    loop {
+        values.push(value);
+        value += sweep.step;
+        if direction * value > direction * sweep.stop * (1.0 + 1e-10) {
+            break;
+        }
+    }
+    values
 }
 
 fn run_ac_analysis(

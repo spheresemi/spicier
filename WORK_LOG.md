@@ -932,3 +932,31 @@ Added .PRINT command support for specifying which variables to output in analysi
 
 **Tests:** 2 new parser tests (test_parse_print_command, test_parse_print_ac)
 **New examples:** print_test.sp, no_print_test.sp
+
+### Phase 4: Multiple Sweep Variables for .DC
+
+Added support for nested DC sweeps, allowing two sources to be swept in a nested loop. This is commonly used for transistor I-V characteristic curves (e.g., sweeping Vds for multiple Vgs values).
+
+**Parser changes (`spicier-parser/src/parser.rs`):**
+- New `DcSweepSpec` struct containing source_name, start, stop, step
+- Changed `AnalysisCommand::Dc` to hold `sweeps: Vec<DcSweepSpec>` instead of individual fields
+- Updated `parse_dc_command()` to parse optional second sweep specification
+- Exported `DcSweepSpec` from parser lib.rs
+
+**CLI changes (`spicier-cli/src/main.rs`):**
+- `run_dc_sweep()` now accepts `&[DcSweepSpec]` and dispatches to single or nested sweep
+- New `run_single_dc_sweep()` for single source sweep (original behavior)
+- New `run_nested_dc_sweep()` for two-source nested sweep
+- New `NestedSweepStamper` that patches both swept sources in the RHS
+- New `generate_sweep_values()` helper function
+
+**Syntax:**
+```spice
+.DC V1 0 10 1                     ; Single sweep: V1 from 0 to 10V, step 1V
+.DC V1 0 10 2 V2 0 5 1            ; Nested sweep: outer V1 0-10V, inner V2 0-5V
+```
+
+In nested sweeps, the first source is the outer (slow) sweep and the second is the inner (fast) sweep.
+
+**Tests:** 1 new parser test (test_parse_dc_command_nested_sweep)
+**New examples:** nested_dc_sweep.sp

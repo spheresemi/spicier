@@ -169,16 +169,12 @@ R2 2 0 1k
     // Verify analysis command was parsed
     assert_eq!(result.analyses.len(), 1);
     match &result.analyses[0] {
-        AnalysisCommand::Dc {
-            source_name,
-            start,
-            stop,
-            step,
-        } => {
-            assert_eq!(source_name, "V1");
-            assert!((start - 0.0).abs() < 1e-10);
-            assert!((stop - 5.0).abs() < 1e-10);
-            assert!((step - 1.0).abs() < 1e-10);
+        AnalysisCommand::Dc { sweeps } => {
+            assert_eq!(sweeps.len(), 1);
+            assert_eq!(sweeps[0].source_name, "V1");
+            assert!((sweeps[0].start - 0.0).abs() < 1e-10);
+            assert!((sweeps[0].stop - 5.0).abs() < 1e-10);
+            assert!((sweeps[0].step - 1.0).abs() < 1e-10);
         }
         _ => panic!("Expected DC analysis command"),
     }

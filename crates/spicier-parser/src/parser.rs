@@ -22,17 +22,31 @@ pub enum AcSweepType {
     Oct,
 }
 
+/// A single DC sweep specification.
+#[derive(Debug, Clone)]
+pub struct DcSweepSpec {
+    /// Name of the source to sweep.
+    pub source_name: String,
+    /// Start value.
+    pub start: f64,
+    /// Stop value.
+    pub stop: f64,
+    /// Step size.
+    pub step: f64,
+}
+
 /// An analysis command parsed from the netlist.
 #[derive(Debug, Clone)]
 pub enum AnalysisCommand {
     /// DC operating point (.OP).
     Op,
-    /// DC sweep (.DC source start stop step).
+    /// DC sweep (.DC source start stop step [source2 start2 stop2 step2]).
+    ///
+    /// Supports nested sweeps: the first sweep is the outer (slow) sweep,
+    /// the second (if present) is the inner (fast) sweep.
     Dc {
-        source_name: String,
-        start: f64,
-        stop: f64,
-        step: f64,
+        /// One or two sweep specifications.
+        sweeps: Vec<DcSweepSpec>,
     },
     /// AC sweep (.AC type npoints fstart fstop).
     Ac {
@@ -281,8 +295,11 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    /// Parse .DC source start stop step
+    /// Parse .DC source start stop step [source2 start2 stop2 step2]
     fn parse_dc_command(&mut self, line: usize) -> Result<()> {
+        let mut sweeps = Vec::new();
+
+        // Parse first (required) sweep specification
         let source_name = match self.peek() {
             Token::Name(n) | Token::Value(n) => {
                 let n = n.clone();
@@ -301,12 +318,32 @@ impl<'a> Parser<'a> {
         let stop = self.expect_value(line)?;
         let step = self.expect_value(line)?;
 
-        self.analyses.push(AnalysisCommand::Dc {
+        sweeps.push(DcSweepSpec {
             source_name,
             start,
             stop,
             step,
         });
+
+        // Check for optional second sweep specification
+        if let Token::Name(n) | Token::Value(n) = self.peek() {
+            let source_name2 = n.clone();
+            self.advance();
+
+            // If we got a second source name, we need all four values
+            let start2 = self.expect_value(line)?;
+            let stop2 = self.expect_value(line)?;
+            let step2 = self.expect_value(line)?;
+
+            sweeps.push(DcSweepSpec {
+                source_name: source_name2,
+                start: start2,
+                stop: stop2,
+                step: step2,
+            });
+        }
+
+        self.analyses.push(AnalysisCommand::Dc { sweeps });
 
         self.skip_to_eol();
         Ok(())
@@ -1257,16 +1294,43 @@ R2 2 0 1k
         let result = parse_full(input).unwrap();
         assert_eq!(result.analyses.len(), 1);
         match &result.analyses[0] {
-            AnalysisCommand::Dc {
-                source_name,
-                start,
-                stop,
-                step,
-            } => {
-                assert_eq!(source_name, "V1");
-                assert!((start - 0.0).abs() < 1e-10);
-                assert!((stop - 10.0).abs() < 1e-10);
-                assert!((step - 0.5).abs() < 1e-10);
+            AnalysisCommand::Dc { sweeps } => {
+                assert_eq!(sweeps.len(), 1);
+                assert_eq!(sweeps[0].source_name, "V1");
+                assert!((sweeps[0].start - 0.0).abs() < 1e-10);
+                assert!((sweeps[0].stop - 10.0).abs() < 1e-10);
+                assert!((sweeps[0].step - 0.5).abs() < 1e-10);
+            }
+            _ => panic!("Expected DC analysis command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_dc_command_nested_sweep() {
+        let input = r#"Nested DC Sweep Test
+V1 1 0 10
+V2 2 0 5
+R1 1 2 1k
+R2 2 0 1k
+.dc V1 0 10 1 V2 0 5 0.5
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert_eq!(result.analyses.len(), 1);
+        match &result.analyses[0] {
+            AnalysisCommand::Dc { sweeps } => {
+                assert_eq!(sweeps.len(), 2);
+                // Primary (outer) sweep
+                assert_eq!(sweeps[0].source_name, "V1");
+                assert!((sweeps[0].start - 0.0).abs() < 1e-10);
+                assert!((sweeps[0].stop - 10.0).abs() < 1e-10);
+                assert!((sweeps[0].step - 1.0).abs() < 1e-10);
+                // Secondary (inner) sweep
+                assert_eq!(sweeps[1].source_name, "V2");
+                assert!((sweeps[1].start - 0.0).abs() < 1e-10);
+                assert!((sweeps[1].stop - 5.0).abs() < 1e-10);
+                assert!((sweeps[1].step - 0.5).abs() < 1e-10);
             }
             _ => panic!("Expected DC analysis command"),
         }
