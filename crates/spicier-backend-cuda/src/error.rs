@@ -30,6 +30,8 @@ pub enum CudaError {
         /// Maximum allowed batch size.
         max: usize,
     },
+    /// Compute operation failed (cuSPARSE, cuSOLVER, etc.).
+    Compute(String),
 }
 
 impl fmt::Display for CudaError {
@@ -47,6 +49,7 @@ impl fmt::Display for CudaError {
             CudaError::BatchTooLarge { size, max } => {
                 write!(f, "Batch size {} exceeds maximum {}", size, max)
             }
+            CudaError::Compute(msg) => write!(f, "CUDA compute operation failed: {}", msg),
         }
     }
 }

@@ -123,6 +123,7 @@ pub mod dc;
 pub mod dispatch;
 pub mod error;
 pub mod gmres;
+pub mod ilu;
 pub mod linear;
 pub mod measure;
 pub mod newton;
@@ -144,7 +145,10 @@ pub use dc::{
     DcSolution, DcSweepParams, DcSweepResult, DcSweepStamper, solve_dc, solve_dc_dispatched,
     solve_dc_sweep, solve_dc_sweep_dispatched,
 };
-pub use dispatch::{DispatchConfig, DispatchedSolveInfo, GpuBatchConfig, SolverDispatchStrategy};
+pub use dispatch::{
+    DispatchConfig, DispatchedSolveInfo, GpuBatchConfig, IluConfig, PreconditionerType,
+    SolverDispatchStrategy,
+};
 pub use error::{Error, Result};
 pub use gmres::{
     GmresConfig, GmresResult, RealGmresResult, solve_gmres, solve_gmres_preconditioned,
@@ -163,6 +167,7 @@ pub use parallel::{
     ParallelTripletAccumulator, parallel_ranges, stamp_conductance_triplets,
     stamp_current_source_rhs,
 };
+pub use ilu::{ComplexIlu0Preconditioner, Ilu0Preconditioner, IluError};
 pub use preconditioner::{
     ComplexJacobiPreconditioner, ComplexPreconditioner, IdentityPreconditioner,
     JacobiPreconditioner, RealPreconditioner,

@@ -58,7 +58,7 @@ indexmap = "2"
 rayon = "1.10"
 
 # GPU/Backend
-cudarc = { version = "0.16", features = ["std", "driver", "cublas", "dynamic-loading", "cuda-12000"], default-features = false }
+cudarc = { version = "0.16", features = ["std", "driver", "cublas", "cusparse", "cusolver", "dynamic-loading", "cuda-12000"], default-features = false }
 wgpu = "23"
 bytemuck = { version = "1", features = ["derive"] }
 pollster = "0.4"

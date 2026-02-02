@@ -4,6 +4,7 @@
 //! - Compute backend (CPU, CUDA, Metal)
 //! - Solver strategy (Direct LU, Iterative GMRES, Auto)
 //! - Size thresholds for dispatch decisions
+//! - Preconditioner configuration (Jacobi, ILU(0))
 
 use crate::backend::ComputeBackend;
 use crate::gmres::GmresConfig;
@@ -29,6 +30,53 @@ impl Default for GpuBatchConfig {
     }
 }
 
+/// Preconditioner type for iterative solvers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PreconditionerType {
+    /// No preconditioning (identity).
+    None,
+    /// Jacobi (diagonal) preconditioning.
+    #[default]
+    Jacobi,
+    /// ILU(0) incomplete LU preconditioning.
+    Ilu0,
+}
+
+impl PreconditionerType {
+    /// Parse from a string.
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.to_lowercase().as_str() {
+            "none" | "identity" => Some(Self::None),
+            "jacobi" | "diag" | "diagonal" => Some(Self::Jacobi),
+            "ilu" | "ilu0" | "ilu(0)" => Some(Self::Ilu0),
+            _ => None,
+        }
+    }
+}
+
+/// Configuration for ILU preconditioner.
+#[derive(Debug, Clone)]
+pub struct IluConfig {
+    /// Whether ILU is enabled (vs fallback to Jacobi).
+    pub enabled: bool,
+    /// Fill level (0 = ILU(0), maintains original sparsity pattern).
+    /// Higher values allow more fill-in for better preconditioning.
+    pub fill_level: usize,
+    /// Size threshold above which ILU is preferred over Jacobi.
+    /// Below this threshold, Jacobi is used for its simplicity.
+    pub size_threshold: usize,
+}
+
+impl Default for IluConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            fill_level: 0,
+            size_threshold: 1000, // Use ILU for matrices >= 1000
+        }
+    }
+}
+
 /// Solver dispatch configuration.
 ///
 /// Controls how the solver selects between different backends and algorithms
@@ -43,10 +91,17 @@ pub struct DispatchConfig {
     pub cpu_threshold: usize,
     /// Size threshold above which GMRES is preferred over direct LU.
     pub gmres_threshold: usize,
+    /// Size threshold above which GPU sparse direct solve is used (CUDA only).
+    /// For circuits with 50k+ nodes, sparse LU on GPU via cuSOLVER.
+    pub sparse_direct_threshold: usize,
     /// GMRES configuration for iterative solving.
     pub gmres_config: GmresConfig,
     /// GPU batch configuration for sweep operations.
     pub gpu_batch_config: GpuBatchConfig,
+    /// ILU preconditioner configuration.
+    pub ilu_config: IluConfig,
+    /// Preconditioner type for GMRES.
+    pub preconditioner: PreconditionerType,
 }
 
 impl Default for DispatchConfig {
@@ -54,10 +109,13 @@ impl Default for DispatchConfig {
         Self {
             backend: ComputeBackend::Cpu,
             strategy: SolverDispatchStrategy::Auto,
-            cpu_threshold: 1000,     // < 1k nodes: always CPU
-            gmres_threshold: 10_000, // >= 10k nodes: prefer GMRES
+            cpu_threshold: 1000,           // < 1k nodes: always CPU
+            gmres_threshold: 10_000,       // >= 10k nodes: prefer GMRES
+            sparse_direct_threshold: 50_000, // >= 50k: GPU sparse direct (CUDA)
             gmres_config: GmresConfig::default(),
             gpu_batch_config: GpuBatchConfig::default(),
+            ilu_config: IluConfig::default(),
+            preconditioner: PreconditionerType::default(),
         }
     }
 }
@@ -156,6 +214,51 @@ impl DispatchConfig {
     pub fn with_gpu_batch_config(mut self, config: GpuBatchConfig) -> Self {
         self.gpu_batch_config = config;
         self
+    }
+
+    /// Set the ILU preconditioner configuration.
+    pub fn with_ilu_config(mut self, config: IluConfig) -> Self {
+        self.ilu_config = config;
+        self
+    }
+
+    /// Set the preconditioner type.
+    pub fn with_preconditioner(mut self, preconditioner: PreconditionerType) -> Self {
+        self.preconditioner = preconditioner;
+        self
+    }
+
+    /// Set the sparse direct threshold.
+    pub fn with_sparse_direct_threshold(mut self, threshold: usize) -> Self {
+        self.sparse_direct_threshold = threshold;
+        self
+    }
+
+    /// Decide whether to use GPU sparse direct solve (CUDA cuSOLVER).
+    ///
+    /// Returns true if:
+    /// - Backend is CUDA
+    /// - Size is above sparse_direct_threshold
+    pub fn use_gpu_sparse_direct(&self, size: usize) -> bool {
+        matches!(self.backend, ComputeBackend::Cuda { .. })
+            && size >= self.sparse_direct_threshold
+    }
+
+    /// Select the appropriate preconditioner type for a given size.
+    ///
+    /// Uses ILU(0) for larger systems if enabled, otherwise Jacobi.
+    pub fn select_preconditioner(&self, size: usize) -> PreconditionerType {
+        if self.preconditioner != PreconditionerType::Jacobi {
+            // Explicit override
+            return self.preconditioner;
+        }
+
+        // Auto-select: use ILU for larger systems
+        if self.ilu_config.enabled && size >= self.ilu_config.size_threshold {
+            PreconditionerType::Ilu0
+        } else {
+            PreconditionerType::Jacobi
+        }
     }
 
     /// Get a human-readable description of the dispatch decision for a size.

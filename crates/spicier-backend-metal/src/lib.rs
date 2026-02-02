@@ -20,6 +20,7 @@ pub mod dense_operator;
 pub mod device_eval;
 pub mod error;
 pub mod gpu_newton;
+pub mod ilu_preconditioner;
 pub mod matrix_assembly;
 pub mod memory;
 
@@ -47,6 +48,7 @@ pub use gpu_newton::{
     GpuCircuitTopology, GpuNewtonRaphson, GpuNrConfig, GpuNrResult, MosfetDeviceInfo,
     MosfetNodes, MosfetStampLocations, VoltageLimitParams,
 };
+pub use ilu_preconditioner::GpuIlu0Preconditioner;
 pub use matrix_assembly::{ConductanceStamp, CurrentStamp, GpuMatrixAssembler, GpuRhsAssembler};
 pub use memory::{
     GpuMemoryCalculator, GpuMemoryCalculatorBuilder, GpuMemoryConfig, SweepMemoryRequirements,
