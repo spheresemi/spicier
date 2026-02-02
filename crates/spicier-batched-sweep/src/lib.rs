@@ -83,6 +83,12 @@ pub use rng::{
     uniform_f32,
 };
 
+// Re-export key statistics types for convenience
+pub use statistics::{
+    Histogram, HistogramBin, StatisticsAccumulator, StreamingStatistics, SweepStatistics,
+    SweepSummary, YieldAnalysis, YieldSpec,
+};
+
 #[cfg(feature = "cuda")]
 pub use cuda::CudaBatchedSolver;
 

@@ -1056,6 +1056,128 @@ impl GpuNewtonRaphson {
         })
     }
 
+    /// Solve with automatic chunking for large sweeps.
+    ///
+    /// This method automatically determines if the sweep is too large to fit
+    /// in GPU memory and processes it in chunks if necessary. For sweeps that
+    /// fit in memory, it delegates to the standard `solve` method.
+    ///
+    /// # Arguments
+    /// * `topology` - Circuit topology and device information
+    /// * `initial_guess` - Optional initial solution guess (num_sweeps × num_nodes)
+    /// * `num_sweeps` - Number of sweep points
+    ///
+    /// # Returns
+    /// `GpuNrResult` with final solutions and convergence info
+    pub fn solve_chunked(
+        &self,
+        topology: &GpuCircuitTopology,
+        initial_guess: Option<&[f32]>,
+        num_sweeps: usize,
+    ) -> Result<GpuNrResult> {
+        use crate::memory::GpuMemoryCalculator;
+
+        let memory_calc = GpuMemoryCalculator::from_context(&self.ctx);
+        let nnz = topology.csr_structure.nnz;
+        let num_nodes = topology.num_nodes;
+        let chunk_size = memory_calc.chunk_size(num_sweeps, nnz, num_nodes);
+
+        // If everything fits in one chunk, use the fast path
+        if chunk_size >= num_sweeps {
+            return self.solve(topology, initial_guess, num_sweeps);
+        }
+
+        log::info!(
+            "Chunking large sweep: {} sweeps into chunks of {} ({}x{}={} nnz per matrix)",
+            num_sweeps, chunk_size, num_nodes, num_nodes, nnz
+        );
+
+        let start_time = std::time::Instant::now();
+        let num_chunks = (num_sweeps + chunk_size - 1) / chunk_size;
+
+        // Allocate result storage
+        let mut all_solutions = Vec::with_capacity(num_sweeps * num_nodes);
+        let mut all_converged = Vec::with_capacity(num_sweeps);
+        let mut all_iterations = Vec::with_capacity(num_sweeps);
+        let mut all_residuals = Vec::with_capacity(num_sweeps);
+
+        // Process each chunk
+        for chunk_idx in 0..num_chunks {
+            let start = chunk_idx * chunk_size;
+            let end = (start + chunk_size).min(num_sweeps);
+            let chunk_sweeps = end - start;
+
+            log::debug!(
+                "Processing chunk {}/{}: sweeps {}..{}",
+                chunk_idx + 1, num_chunks, start, end
+            );
+
+            // Extract initial guess for this chunk if provided
+            let chunk_guess = initial_guess.map(|guess| {
+                let chunk_start = start * num_nodes;
+                let chunk_end = end * num_nodes;
+                &guess[chunk_start..chunk_end]
+            });
+
+            // Solve this chunk
+            let chunk_result = self.solve(topology, chunk_guess, chunk_sweeps)?;
+
+            // Aggregate results
+            all_solutions.extend(chunk_result.solutions);
+            all_converged.extend(chunk_result.converged);
+            all_iterations.extend(chunk_result.iterations);
+            all_residuals.extend(chunk_result.residuals);
+        }
+
+        log::info!(
+            "Chunked sweep complete: {} chunks in {:?}",
+            num_chunks, start_time.elapsed()
+        );
+
+        Ok(GpuNrResult {
+            solutions: all_solutions,
+            iterations: all_iterations,
+            converged: all_converged,
+            residuals: all_residuals,
+            elapsed: start_time.elapsed(),
+        })
+    }
+
+    /// Check if a sweep would need chunking.
+    ///
+    /// Returns `true` if the sweep is too large to fit in a single GPU buffer
+    /// allocation and would require chunking.
+    pub fn needs_chunking(&self, topology: &GpuCircuitTopology, num_sweeps: usize) -> bool {
+        use crate::memory::GpuMemoryCalculator;
+
+        let memory_calc = GpuMemoryCalculator::from_context(&self.ctx);
+        let chunk_size = memory_calc.chunk_size(
+            num_sweeps,
+            topology.csr_structure.nnz,
+            topology.num_nodes,
+        );
+        chunk_size < num_sweeps
+    }
+
+    /// Get memory requirements for a sweep.
+    ///
+    /// Returns information about memory usage including whether chunking
+    /// would be needed and the recommended chunk size.
+    pub fn memory_requirements(
+        &self,
+        topology: &GpuCircuitTopology,
+        num_sweeps: usize,
+    ) -> crate::memory::SweepMemoryRequirements {
+        use crate::memory::GpuMemoryCalculator;
+
+        let memory_calc = GpuMemoryCalculator::from_context(&self.ctx);
+        memory_calc.requirements(
+            num_sweeps,
+            topology.csr_structure.nnz,
+            topology.num_nodes,
+        )
+    }
+
     // Helper methods
 
     fn build_pn_node_flags(&self, topology: &GpuCircuitTopology, num_nodes: usize) -> Vec<u32> {

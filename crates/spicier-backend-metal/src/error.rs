@@ -20,6 +20,15 @@ pub enum WgpuError {
     InvalidDimension(String),
     /// GPU operation failed.
     Compute(String),
+    /// Buffer size exceeds GPU limits.
+    BufferTooLarge {
+        /// Required buffer size in bytes.
+        required: u64,
+        /// Maximum buffer size supported.
+        max_buffer: u64,
+    },
+    /// Out of GPU memory.
+    OutOfMemory(String),
 }
 
 impl fmt::Display for WgpuError {
@@ -32,6 +41,14 @@ impl fmt::Display for WgpuError {
             WgpuError::Pipeline(msg) => write!(f, "Compute pipeline creation failed: {}", msg),
             WgpuError::InvalidDimension(msg) => write!(f, "Invalid dimension: {}", msg),
             WgpuError::Compute(msg) => write!(f, "GPU compute operation failed: {}", msg),
+            WgpuError::BufferTooLarge { required, max_buffer } => {
+                write!(
+                    f,
+                    "Sweep requires {} bytes but max buffer size is {}. Use chunking or reduce sweep size.",
+                    required, max_buffer
+                )
+            }
+            WgpuError::OutOfMemory(msg) => write!(f, "Out of GPU memory: {}", msg),
         }
     }
 }

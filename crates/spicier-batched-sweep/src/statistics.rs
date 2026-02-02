@@ -433,6 +433,151 @@ pub struct SweepSummary {
     pub n: usize,
 }
 
+/// Streaming statistics accumulator for chunked sweep processing.
+///
+/// This allows computing statistics incrementally without storing all
+/// solutions in memory. Each chunk of solutions is processed and the
+/// statistics are updated, then the chunk can be discarded.
+///
+/// # Example
+///
+/// ```
+/// use spicier_batched_sweep::statistics::StreamingStatistics;
+///
+/// let n = 5; // 5 nodes per solution
+/// let mut streaming = StreamingStatistics::new(n);
+///
+/// // Process chunks as they arrive
+/// let chunk1: Vec<f64> = vec![1.0, 2.0, 3.0, 4.0, 5.0,   // point 1
+///                             1.1, 2.1, 3.1, 4.1, 5.1];  // point 2
+/// streaming.process_chunk(&chunk1, 2);
+///
+/// let chunk2: Vec<f64> = vec![0.9, 1.9, 2.9, 3.9, 4.9,   // point 3
+///                             1.2, 2.2, 3.2, 4.2, 5.2];  // point 4
+/// streaming.process_chunk(&chunk2, 2);
+///
+/// // Get final statistics for all 4 points
+/// let stats = streaming.finalize();
+/// assert_eq!(stats.len(), 5);
+/// ```
+#[derive(Debug, Clone)]
+pub struct StreamingStatistics {
+    /// Per-node accumulators.
+    accumulators: Vec<StatisticsAccumulator>,
+    /// Number of nodes per solution.
+    num_nodes: usize,
+    /// Total samples processed.
+    total_samples: usize,
+}
+
+impl StreamingStatistics {
+    /// Create a new streaming statistics accumulator.
+    ///
+    /// # Arguments
+    /// * `num_nodes` - Number of nodes per solution vector
+    pub fn new(num_nodes: usize) -> Self {
+        Self {
+            accumulators: (0..num_nodes).map(|_| StatisticsAccumulator::new()).collect(),
+            num_nodes,
+            total_samples: 0,
+        }
+    }
+
+    /// Process a chunk of solutions.
+    ///
+    /// # Arguments
+    /// * `solutions` - Flattened solution vectors (num_sweeps_in_chunk × num_nodes)
+    /// * `num_sweeps` - Number of sweep points in this chunk
+    ///
+    /// # Panics
+    /// Panics if solutions.len() != num_sweeps * num_nodes
+    pub fn process_chunk(&mut self, solutions: &[f64], num_sweeps: usize) {
+        debug_assert_eq!(
+            solutions.len(),
+            num_sweeps * self.num_nodes,
+            "solutions.len() ({}) != num_sweeps ({}) * num_nodes ({})",
+            solutions.len(),
+            num_sweeps,
+            self.num_nodes
+        );
+
+        for i in 0..num_sweeps {
+            let base = i * self.num_nodes;
+            for (node_idx, acc) in self.accumulators.iter_mut().enumerate() {
+                acc.add(solutions[base + node_idx]);
+            }
+        }
+        self.total_samples += num_sweeps;
+    }
+
+    /// Process a chunk of f32 solutions (converts to f64 internally).
+    ///
+    /// # Arguments
+    /// * `solutions` - Flattened f32 solution vectors
+    /// * `num_sweeps` - Number of sweep points in this chunk
+    pub fn process_chunk_f32(&mut self, solutions: &[f32], num_sweeps: usize) {
+        debug_assert_eq!(
+            solutions.len(),
+            num_sweeps * self.num_nodes,
+            "solutions.len() ({}) != num_sweeps ({}) * num_nodes ({})",
+            solutions.len(),
+            num_sweeps,
+            self.num_nodes
+        );
+
+        for i in 0..num_sweeps {
+            let base = i * self.num_nodes;
+            for (node_idx, acc) in self.accumulators.iter_mut().enumerate() {
+                acc.add(solutions[base + node_idx] as f64);
+            }
+        }
+        self.total_samples += num_sweeps;
+    }
+
+    /// Merge another streaming statistics into this one.
+    ///
+    /// This is useful for parallel reduction across multiple threads.
+    pub fn merge(&mut self, other: &Self) {
+        assert_eq!(
+            self.num_nodes, other.num_nodes,
+            "Cannot merge statistics with different num_nodes"
+        );
+
+        for (acc, other_acc) in self.accumulators.iter_mut().zip(&other.accumulators) {
+            acc.merge(other_acc);
+        }
+        self.total_samples += other.total_samples;
+    }
+
+    /// Finalize and return statistics for each node.
+    pub fn finalize(&self) -> Vec<SweepStatistics> {
+        self.accumulators.iter().map(|acc| acc.finalize()).collect()
+    }
+
+    /// Get the number of nodes.
+    pub fn num_nodes(&self) -> usize {
+        self.num_nodes
+    }
+
+    /// Get the total number of samples processed.
+    pub fn total_samples(&self) -> usize {
+        self.total_samples
+    }
+
+    /// Reset all accumulators to start fresh.
+    pub fn reset(&mut self) {
+        for acc in &mut self.accumulators {
+            *acc = StatisticsAccumulator::new();
+        }
+        self.total_samples = 0;
+    }
+
+    /// Get statistics for a specific node without finalizing.
+    pub fn node_statistics(&self, node_idx: usize) -> SweepStatistics {
+        self.accumulators[node_idx].finalize()
+    }
+}
+
 impl SweepSummary {
     /// Compute a complete sweep summary.
     pub fn compute(
@@ -808,5 +953,162 @@ mod tests {
         let mode_center = hist.bin_center(mode_bin);
         // Mode should be around 3.0
         assert!((mode_center - 3.0).abs() < hist.bin_width);
+    }
+
+    // =========================================================================
+    // Streaming Statistics Tests
+    // =========================================================================
+
+    #[test]
+    fn test_streaming_statistics_single_chunk() {
+        // 3 sweep points, 2 nodes each
+        let solutions = vec![
+            1.0, 10.0,  // Point 0
+            2.0, 20.0,  // Point 1
+            3.0, 30.0,  // Point 2
+        ];
+
+        let mut streaming = StreamingStatistics::new(2);
+        streaming.process_chunk(&solutions, 3);
+
+        let stats = streaming.finalize();
+        assert_eq!(stats.len(), 2);
+        assert_eq!(streaming.total_samples(), 3);
+
+        // Node 0: mean of [1, 2, 3] = 2
+        assert!((stats[0].mean - 2.0).abs() < 1e-10);
+        // Node 1: mean of [10, 20, 30] = 20
+        assert!((stats[1].mean - 20.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_streaming_statistics_multiple_chunks() {
+        let mut streaming = StreamingStatistics::new(2);
+
+        // First chunk: 2 points
+        let chunk1 = vec![
+            1.0, 10.0,  // Point 0
+            2.0, 20.0,  // Point 1
+        ];
+        streaming.process_chunk(&chunk1, 2);
+
+        // Second chunk: 2 points
+        let chunk2 = vec![
+            3.0, 30.0,  // Point 2
+            4.0, 40.0,  // Point 3
+        ];
+        streaming.process_chunk(&chunk2, 2);
+
+        let stats = streaming.finalize();
+        assert_eq!(streaming.total_samples(), 4);
+
+        // Node 0: mean of [1, 2, 3, 4] = 2.5
+        assert!((stats[0].mean - 2.5).abs() < 1e-10);
+        // Node 1: mean of [10, 20, 30, 40] = 25
+        assert!((stats[1].mean - 25.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_streaming_statistics_f32() {
+        let mut streaming = StreamingStatistics::new(2);
+
+        let chunk: Vec<f32> = vec![
+            1.0, 10.0,
+            2.0, 20.0,
+            3.0, 30.0,
+        ];
+        streaming.process_chunk_f32(&chunk, 3);
+
+        let stats = streaming.finalize();
+        assert_eq!(streaming.total_samples(), 3);
+        assert!((stats[0].mean - 2.0).abs() < 1e-6);
+        assert!((stats[1].mean - 20.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_streaming_statistics_merge() {
+        let mut streaming1 = StreamingStatistics::new(2);
+        let mut streaming2 = StreamingStatistics::new(2);
+
+        streaming1.process_chunk(&[1.0, 10.0, 2.0, 20.0], 2);
+        streaming2.process_chunk(&[3.0, 30.0, 4.0, 40.0], 2);
+
+        streaming1.merge(&streaming2);
+        let stats = streaming1.finalize();
+
+        assert_eq!(streaming1.total_samples(), 4);
+        assert!((stats[0].mean - 2.5).abs() < 1e-10);
+        assert!((stats[1].mean - 25.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_streaming_statistics_reset() {
+        let mut streaming = StreamingStatistics::new(2);
+        streaming.process_chunk(&[1.0, 10.0, 2.0, 20.0], 2);
+
+        assert_eq!(streaming.total_samples(), 2);
+
+        streaming.reset();
+        assert_eq!(streaming.total_samples(), 0);
+
+        streaming.process_chunk(&[5.0, 50.0], 1);
+        let stats = streaming.finalize();
+
+        assert_eq!(streaming.total_samples(), 1);
+        assert!((stats[0].mean - 5.0).abs() < 1e-10);
+        assert!((stats[1].mean - 50.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_streaming_statistics_matches_batch() {
+        // Compare streaming to batch computation
+        let solutions = vec![
+            1.0, 10.0,
+            2.0, 20.0,
+            3.0, 30.0,
+            4.0, 40.0,
+            5.0, 50.0,
+        ];
+
+        // Batch computation
+        let batch_stats = compute_all_statistics(&solutions, 2, 5);
+
+        // Streaming computation in 2 chunks
+        let mut streaming = StreamingStatistics::new(2);
+        streaming.process_chunk(&solutions[0..6], 3); // First 3 points
+        streaming.process_chunk(&solutions[6..10], 2); // Last 2 points
+        let streaming_stats = streaming.finalize();
+
+        // Should match
+        for i in 0..2 {
+            assert!(
+                (batch_stats[i].mean - streaming_stats[i].mean).abs() < 1e-10,
+                "mean mismatch for node {}", i
+            );
+            assert!(
+                (batch_stats[i].min - streaming_stats[i].min).abs() < 1e-10,
+                "min mismatch for node {}", i
+            );
+            assert!(
+                (batch_stats[i].max - streaming_stats[i].max).abs() < 1e-10,
+                "max mismatch for node {}", i
+            );
+            assert!(
+                (batch_stats[i].variance - streaming_stats[i].variance).abs() < 1e-10,
+                "variance mismatch for node {}", i
+            );
+        }
+    }
+
+    #[test]
+    fn test_streaming_node_statistics() {
+        let mut streaming = StreamingStatistics::new(3);
+        streaming.process_chunk(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 2);
+
+        // Get stats for just node 1 (values: 2.0, 5.0)
+        let node1_stats = streaming.node_statistics(1);
+        assert!((node1_stats.mean - 3.5).abs() < 1e-10);
+        assert_eq!(node1_stats.min, 2.0);
+        assert_eq!(node1_stats.max, 5.0);
     }
 }

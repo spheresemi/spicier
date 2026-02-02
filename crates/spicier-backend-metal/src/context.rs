@@ -127,4 +127,23 @@ impl WgpuContext {
     pub fn supports_f64(&self) -> bool {
         self.supports_f64
     }
+
+    /// Get the maximum buffer size supported by the device.
+    ///
+    /// Returns the device's max_buffer_size limit, capped at 256MB as a
+    /// practical limit for most operations. This is useful for chunking
+    /// large sweep operations.
+    pub fn max_buffer_size(&self) -> u64 {
+        // Query device limits and cap at practical 256MB limit
+        let device_max = self.device.limits().max_buffer_size;
+        device_max.min(256 * 1024 * 1024)
+    }
+
+    /// Get the maximum storage buffer binding size.
+    ///
+    /// This is the maximum size for a single storage buffer binding
+    /// in a shader.
+    pub fn max_storage_buffer_binding_size(&self) -> u32 {
+        self.device.limits().max_storage_buffer_binding_size
+    }
 }
