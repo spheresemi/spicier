@@ -1,0 +1,33 @@
+[package]
+name = "spicier-backend-mps"
+description = "Metal Performance Shaders backend for Spicier GPU-accelerated batched LU solving"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["spice", "metal", "mps", "gpu", "performance"]
+categories = ["mathematics", "science"]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSString", "NSError"] }
+objc2-metal = { version = "0.3", features = [
+    "MTLDevice",
+    "MTLCommandQueue",
+    "MTLCommandBuffer",
+    "MTLBuffer",
+    "MTLResource",
+] }
+objc2-metal-performance-shaders = { version = "0.3", features = [
+    "MPSCore",
+    "MPSMatrix",
+    "MPSKernel",
+    "MPSMatrixTypes",
+    "MPSMatrixDecomposition",
+    "MPSMatrixSolve",
+] }
+
+[dependencies]
+log.workspace = true
+thiserror.workspace = true
