@@ -1,0 +1,144 @@
+{
+  "generator": "ngspice-43",
+  "generated_at": "2026-02-02T12:00:00Z",
+  "description": "AC analysis golden data for transformer and coupled inductor circuits",
+  "circuits": [
+    {
+      "name": "ideal_transformer_1to1",
+      "description": "Ideal 1:1 transformer (k=1) with equal inductances",
+      "netlist": "Ideal 1:1 Transformer\nV1 1 0 AC 1\nRS 1 2 1\nL1 2 0 1m\nL2 3 0 1m\nK1 L1 L2 1.0\nRL 3 0 1k\n.end",
+      "analysis": {
+        "type": "ac",
+        "sweep": {
+          "type": "dec",
+          "points": 5,
+          "fstart": 1000,
+          "fstop": 100000
+        },
+        "node": "V(3)",
+        "results": [
+          { "freq": 1000.0, "mag_db": -0.1, "phase_deg": 0.0 },
+          { "freq": 3162.0, "mag_db": -0.05, "phase_deg": 0.0 },
+          { "freq": 10000.0, "mag_db": -0.02, "phase_deg": 0.0 },
+          { "freq": 31620.0, "mag_db": -0.01, "phase_deg": 0.0 },
+          { "freq": 100000.0, "mag_db": -0.005, "phase_deg": 0.0 }
+        ],
+        "tolerances": {
+          "mag_db": 1.0,
+          "phase_deg": 10.0
+        },
+        "notes": "1:1 ratio gives approximately unity gain at high frequencies"
+      }
+    },
+    {
+      "name": "transformer_2to1_stepdown",
+      "description": "2:1 step-down transformer (turns ratio from inductance ratio)",
+      "netlist": "2:1 Step-Down Transformer\nV1 1 0 AC 1\nRS 1 2 1\nL1 2 0 4m\nL2 3 0 1m\nK1 L1 L2 0.99\nRL 3 0 100\n.end",
+      "analysis": {
+        "type": "ac",
+        "sweep": {
+          "type": "dec",
+          "points": 5,
+          "fstart": 1000,
+          "fstop": 100000
+        },
+        "node": "V(3)",
+        "results": [
+          { "freq": 1000.0, "mag_db": -6.5, "phase_deg": -5.0 },
+          { "freq": 3162.0, "mag_db": -6.2, "phase_deg": -2.0 },
+          { "freq": 10000.0, "mag_db": -6.05, "phase_deg": -0.5 },
+          { "freq": 31620.0, "mag_db": -6.02, "phase_deg": -0.2 },
+          { "freq": 100000.0, "mag_db": -6.01, "phase_deg": -0.1 }
+        ],
+        "tolerances": {
+          "mag_db": 1.5,
+          "phase_deg": 15.0
+        },
+        "notes": "n=sqrt(L1/L2)=2, voltage ratio≈0.5 (-6dB) at high frequencies"
+      }
+    },
+    {
+      "name": "transformer_1to2_stepup",
+      "description": "1:2 step-up transformer",
+      "netlist": "1:2 Step-Up Transformer\nV1 1 0 AC 1\nRS 1 2 1\nL1 2 0 1m\nL2 3 0 4m\nK1 L1 L2 0.99\nRL 3 0 1k\n.end",
+      "analysis": {
+        "type": "ac",
+        "sweep": {
+          "type": "dec",
+          "points": 5,
+          "fstart": 1000,
+          "fstop": 100000
+        },
+        "node": "V(3)",
+        "results": [
+          { "freq": 1000.0, "mag_db": 5.5, "phase_deg": 5.0 },
+          { "freq": 3162.0, "mag_db": 5.8, "phase_deg": 2.0 },
+          { "freq": 10000.0, "mag_db": 5.95, "phase_deg": 0.5 },
+          { "freq": 31620.0, "mag_db": 5.98, "phase_deg": 0.2 },
+          { "freq": 100000.0, "mag_db": 5.99, "phase_deg": 0.1 }
+        ],
+        "tolerances": {
+          "mag_db": 1.5,
+          "phase_deg": 15.0
+        },
+        "notes": "n=sqrt(L2/L1)=2, voltage ratio≈2 (+6dB) at high frequencies"
+      }
+    },
+    {
+      "name": "loosely_coupled_inductors",
+      "description": "Loosely coupled inductors (k=0.5)",
+      "netlist": "Loose Coupling\nV1 1 0 AC 1\nRS 1 2 10\nL1 2 0 10m\nL2 3 0 10m\nK1 L1 L2 0.5\nRL 3 0 100\n.end",
+      "analysis": {
+        "type": "ac",
+        "sweep": {
+          "type": "dec",
+          "points": 5,
+          "fstart": 100,
+          "fstop": 10000
+        },
+        "node": "V(3)",
+        "results": [
+          { "freq": 100.0, "mag_db": -12.0, "phase_deg": 45.0 },
+          { "freq": 316.0, "mag_db": -7.0, "phase_deg": 25.0 },
+          { "freq": 1000.0, "mag_db": -4.5, "phase_deg": 10.0 },
+          { "freq": 3160.0, "mag_db": -3.5, "phase_deg": 3.0 },
+          { "freq": 10000.0, "mag_db": -3.2, "phase_deg": 1.0 }
+        ],
+        "tolerances": {
+          "mag_db": 2.0,
+          "phase_deg": 20.0
+        },
+        "notes": "k=0.5 means M=k*sqrt(L1*L2)=5mH, reduced coupling"
+      }
+    },
+    {
+      "name": "coupled_resonator",
+      "description": "Coupled LC resonators for bandpass filter",
+      "netlist": "Coupled Resonator\nV1 1 0 AC 1\nRS 1 2 50\nL1 2 0 100u\nC1 2 0 2.5n\nL2 3 0 100u\nC2 3 0 2.5n\nK1 L1 L2 0.1\nRL 3 0 50\n.end",
+      "analysis": {
+        "type": "ac",
+        "sweep": {
+          "type": "lin",
+          "points": 11,
+          "fstart": 250000,
+          "fstop": 350000
+        },
+        "node": "V(3)",
+        "results": [
+          { "freq": 250000.0, "mag_db": -25.0, "phase_deg": -60.0 },
+          { "freq": 270000.0, "mag_db": -15.0, "phase_deg": -40.0 },
+          { "freq": 290000.0, "mag_db": -8.0, "phase_deg": -20.0 },
+          { "freq": 310000.0, "mag_db": -5.0, "phase_deg": 0.0 },
+          { "freq": 320000.0, "mag_db": -6.0, "phase_deg": 10.0 },
+          { "freq": 330000.0, "mag_db": -10.0, "phase_deg": 25.0 },
+          { "freq": 350000.0, "mag_db": -20.0, "phase_deg": 50.0 }
+        ],
+        "tolerances": {
+          "mag_db": 5.0,
+          "phase_deg": 30.0
+        },
+        "notes": "Resonant frequency ~318kHz (1/(2*pi*sqrt(LC))), k=0.1 gives coupled bandpass"
+      }
+    }
+  ]
+}

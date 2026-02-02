@@ -93,6 +93,37 @@ pub enum AcDeviceInfo {
         /// Transconductance gm = dIds/dVgs at DC operating point.
         gm: f64,
     },
+    /// JFET: linearized as gds + gm*Vgs at operating point.
+    Jfet {
+        drain: Option<usize>,
+        gate: Option<usize>,
+        source: Option<usize>,
+        /// Output conductance gds = dIds/dVds at DC operating point.
+        gds: f64,
+        /// Transconductance gm = dIds/dVgs at DC operating point.
+        gm: f64,
+    },
+    /// BJT: linearized using hybrid-π model at operating point.
+    Bjt {
+        collector: Option<usize>,
+        base: Option<usize>,
+        emitter: Option<usize>,
+        /// Transconductance gm = dIc/dVbe at DC operating point.
+        gm: f64,
+        /// Input conductance gpi = gm/beta at DC operating point.
+        gpi: f64,
+        /// Output conductance go = Ic/Vaf at DC operating point.
+        go: f64,
+    },
+    /// Mutual inductance: coupling between two inductors.
+    MutualInductance {
+        /// Branch index of the first inductor.
+        l1_branch_idx: usize,
+        /// Branch index of the second inductor.
+        l2_branch_idx: usize,
+        /// Mutual inductance M = k * sqrt(L1 * L2).
+        mutual_inductance: f64,
+    },
     /// Unknown device or no AC contribution.
     None,
 }
@@ -114,6 +145,15 @@ pub enum TransientDeviceInfo {
         inductance: f64,
         /// Branch current index in DC solution (for extracting initial current).
         branch_index: usize,
+    },
+    /// Mutual inductance coupling between two inductors.
+    MutualInductance {
+        /// Branch index of the first inductor.
+        l1_branch_idx: usize,
+        /// Branch index of the second inductor.
+        l2_branch_idx: usize,
+        /// Mutual inductance M = k * sqrt(L1 * L2).
+        mutual_inductance: f64,
     },
     /// Not a reactive device.
     None,

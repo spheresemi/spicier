@@ -3,7 +3,9 @@
 use std::collections::HashMap;
 
 use spicier_core::{Netlist, NodeId, units::parse_value};
+use spicier_devices::bjt::BjtParams;
 use spicier_devices::diode::DiodeParams;
+use spicier_devices::jfet::JfetParams;
 use spicier_devices::mosfet::MosfetParams;
 
 use crate::error::{Error, Result};
@@ -45,6 +47,10 @@ pub(crate) enum ModelDefinition {
     Diode(DiodeParams),
     Nmos(MosfetParams),
     Pmos(MosfetParams),
+    Njf(JfetParams),
+    Pjf(JfetParams),
+    Npn(BjtParams),
+    Pnp(BjtParams),
 }
 
 /// Parser state.
@@ -971,5 +977,119 @@ R1 1 0 R_val
 
         let result = parse_full(input).unwrap();
         assert!((result.parameters["R_VAL"] - 1000.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_parse_jfet() {
+        let input = r#"JFET Test
+V1 1 0 10
+VG 2 0 -1
+J1 1 2 0
+R1 1 0 10k
+.end
+"#;
+
+        let netlist = parse(input).unwrap();
+        assert_eq!(netlist.num_devices(), 4);
+        assert!(netlist.has_nonlinear_devices());
+    }
+
+    #[test]
+    fn test_parse_jfet_with_model() {
+        let input = r#"JFET Model Test
+.MODEL JMOD NJF (VTO=-2.5 BETA=2e-4 LAMBDA=0.01)
+V1 1 0 10
+J1 1 2 0 JMOD
+.end
+"#;
+
+        let netlist = parse(input).unwrap();
+        assert_eq!(netlist.num_devices(), 2); // V1, J1
+        assert!(netlist.has_nonlinear_devices());
+    }
+
+    #[test]
+    fn test_parse_pjf_model() {
+        let input = r#"PJF Model Test
+.MODEL PMOD PJF (VTO=2.0 BETA=1e-4)
+V1 1 0 -10
+J1 0 2 1 PMOD
+.end
+"#;
+
+        let netlist = parse(input).unwrap();
+        assert_eq!(netlist.num_devices(), 2);
+    }
+
+    #[test]
+    fn test_parse_bjt() {
+        let input = r#"BJT Test
+V1 1 0 5
+VB 2 0 0.7
+Q1 1 2 0
+R1 1 0 1k
+.end
+"#;
+
+        let netlist = parse(input).unwrap();
+        assert_eq!(netlist.num_devices(), 4);
+        assert!(netlist.has_nonlinear_devices());
+    }
+
+    #[test]
+    fn test_parse_bjt_with_model() {
+        let input = r#"BJT Model Test
+.MODEL QMOD NPN (IS=1e-15 BF=200 VAF=100)
+V1 1 0 5
+Q1 1 2 0 QMOD
+.end
+"#;
+
+        let netlist = parse(input).unwrap();
+        assert_eq!(netlist.num_devices(), 2); // V1, Q1
+        assert!(netlist.has_nonlinear_devices());
+    }
+
+    #[test]
+    fn test_parse_pnp_model() {
+        let input = r#"PNP Model Test
+.MODEL PMOD PNP (IS=1e-15 BF=150)
+V1 1 0 5
+Q1 0 2 1 PMOD
+.end
+"#;
+
+        let netlist = parse(input).unwrap();
+        assert_eq!(netlist.num_devices(), 2);
+    }
+
+    #[test]
+    fn test_parse_mutual_inductance() {
+        let input = r#"Mutual Inductance Test
+V1 1 0 10
+L1 1 2 1m
+L2 3 0 1m
+R1 2 0 1k
+R2 3 0 1k
+K1 L1 L2 0.9
+.end
+"#;
+
+        let netlist = parse(input).unwrap();
+        assert_eq!(netlist.num_devices(), 6); // V1, L1, L2, R1, R2, K1
+    }
+
+    #[test]
+    fn test_parse_bjt_full_params() {
+        let input = r#"BJT Full Params
+.MODEL Q2N2222 NPN (IS=1e-14 BF=100 BR=1 NF=1 NR=1 VAF=100 RB=10 RE=0.1 RC=1 CJE=25p CJC=8p TF=0.4n TR=10n)
+VCC 1 0 5
+VB 2 0 0.7
+Q1 1 2 0 Q2N2222
+.end
+"#;
+
+        let netlist = parse(input).unwrap();
+        assert_eq!(netlist.num_devices(), 3); // VCC, VB, Q1
     }
 }

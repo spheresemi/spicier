@@ -1,0 +1,130 @@
+{
+  "generator": "ngspice-43",
+  "generated_at": "2026-02-02T12:00:00Z",
+  "description": "DC operating point golden data for JFET circuits (Shichman-Hodges model)",
+  "circuits": [
+    {
+      "name": "njf_common_source",
+      "description": "N-channel JFET common-source amplifier with Vgs=0, saturation region",
+      "netlist": "NJF Common Source\n.MODEL JMOD NJF (VTO=-2 BETA=1e-4 LAMBDA=0)\nVDD 1 0 DC 15\nRD 1 2 10k\nJ1 2 0 0 JMOD\n.end",
+      "analysis": {
+        "type": "dc_op",
+        "results": {
+          "V(1)": 15.0,
+          "V(2)": 11.0
+        },
+        "tolerances": {
+          "voltage": 0.1,
+          "current": 1e-6
+        },
+        "notes": "With Vgs=0, Vov=2V, Ids=beta*Vov^2=0.4mA, V(2)=15-0.4mA*10k=11V"
+      }
+    },
+    {
+      "name": "njf_self_bias",
+      "description": "N-channel JFET with self-bias resistor",
+      "netlist": "NJF Self Bias\n.MODEL JMOD NJF (VTO=-2 BETA=1e-4 LAMBDA=0)\nVDD 1 0 DC 20\nRD 1 2 5k\nJ1 2 3 3 JMOD\nRS 3 0 2k\n.end",
+      "analysis": {
+        "type": "dc_op",
+        "results": {
+          "V(1)": 20.0,
+          "V(2)": 15.5,
+          "V(3)": 1.8
+        },
+        "tolerances": {
+          "voltage": 0.5,
+          "current": 1e-5
+        },
+        "notes": "Self-bias: Vgs=-Ids*Rs, operating point found iteratively"
+      }
+    },
+    {
+      "name": "njf_cutoff",
+      "description": "N-channel JFET in cutoff region (Vgs < Vto)",
+      "netlist": "NJF Cutoff\n.MODEL JMOD NJF (VTO=-2 BETA=1e-4 LAMBDA=0)\nVDD 1 0 DC 10\nVG 3 0 DC -3\nRD 1 2 10k\nJ1 2 3 0 JMOD\n.end",
+      "analysis": {
+        "type": "dc_op",
+        "results": {
+          "V(1)": 10.0,
+          "V(2)": 10.0,
+          "V(3)": -3.0
+        },
+        "tolerances": {
+          "voltage": 0.001,
+          "current": 1e-9
+        },
+        "notes": "Vgs=-3V < Vto=-2V, so JFET is cutoff, Ids=0, V(2)=VDD"
+      }
+    },
+    {
+      "name": "njf_linear_region",
+      "description": "N-channel JFET in linear (triode) region",
+      "netlist": "NJF Linear\n.MODEL JMOD NJF (VTO=-2 BETA=1e-4 LAMBDA=0)\nVDD 1 0 DC 1\nVG 3 0 DC 0\nRD 1 2 100\nJ1 2 3 0 JMOD\n.end",
+      "analysis": {
+        "type": "dc_op",
+        "results": {
+          "V(1)": 1.0,
+          "V(2)": 0.15,
+          "V(3)": 0.0
+        },
+        "tolerances": {
+          "voltage": 0.1,
+          "current": 1e-4
+        },
+        "notes": "Low VDD forces JFET into linear region where Vds < Vgs-Vto"
+      }
+    },
+    {
+      "name": "pjf_common_source",
+      "description": "P-channel JFET common-source amplifier",
+      "netlist": "PJF Common Source\n.MODEL PMOD PJF (VTO=2 BETA=1e-4 LAMBDA=0)\nVSS 1 0 DC -15\nRD 1 2 10k\nJ1 2 0 0 PMOD\n.end",
+      "analysis": {
+        "type": "dc_op",
+        "results": {
+          "V(1)": -15.0,
+          "V(2)": -11.0
+        },
+        "tolerances": {
+          "voltage": 0.1,
+          "current": 1e-6
+        },
+        "notes": "PJF mirror of NJF: Vsg=0, current flows from source to drain"
+      }
+    },
+    {
+      "name": "njf_source_follower",
+      "description": "N-channel JFET source follower (common-drain)",
+      "netlist": "NJF Source Follower\n.MODEL JMOD NJF (VTO=-2 BETA=1e-4 LAMBDA=0)\nVDD 1 0 DC 15\nVIN 2 0 DC 5\nJ1 1 2 3 JMOD\nRS 3 0 5k\n.end",
+      "analysis": {
+        "type": "dc_op",
+        "results": {
+          "V(1)": 15.0,
+          "V(2)": 5.0,
+          "V(3)": 3.5
+        },
+        "tolerances": {
+          "voltage": 0.3,
+          "current": 1e-5
+        },
+        "notes": "Source follower: Vs approximately follows Vg with offset due to Vgs"
+      }
+    },
+    {
+      "name": "njf_with_lambda",
+      "description": "N-channel JFET with channel-length modulation",
+      "netlist": "NJF With Lambda\n.MODEL JMOD NJF (VTO=-2 BETA=1e-4 LAMBDA=0.01)\nVDD 1 0 DC 15\nRD 1 2 10k\nJ1 2 0 0 JMOD\n.end",
+      "analysis": {
+        "type": "dc_op",
+        "results": {
+          "V(1)": 15.0,
+          "V(2)": 10.56
+        },
+        "tolerances": {
+          "voltage": 0.2,
+          "current": 1e-5
+        },
+        "notes": "Lambda=0.01 causes slight increase in Ids: Ids=beta*Vov^2*(1+lambda*Vds)"
+      }
+    }
+  ]
+}

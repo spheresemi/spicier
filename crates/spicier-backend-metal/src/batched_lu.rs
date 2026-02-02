@@ -109,6 +109,8 @@ struct CachedBuffers {
     info_capacity: usize,
     /// Cached matrix dimension (bind group depends on uniform buffer contents).
     cached_n: usize,
+    /// Cached batch size (uniform buffer contains this, shader checks against it).
+    cached_batch_size: usize,
     /// Cached layout info for bind group invalidation.
     cached_row_stride: usize,
     cached_matrix_stride: usize,
@@ -133,6 +135,7 @@ impl CachedBuffers {
             rhs_capacity: 0,
             info_capacity: 0,
             cached_n: 0,
+            cached_batch_size: 0,
             cached_row_stride: 0,
             cached_matrix_stride: 0,
             matrix_buffer: None,
@@ -152,10 +155,17 @@ impl CachedBuffers {
             && self.info_capacity >= info_elems
     }
 
-    /// Check if bind group can be reused (same dimensions and layout).
-    fn can_reuse_bind_group(&self, n: usize, row_stride: usize, matrix_stride: usize) -> bool {
+    /// Check if bind group can be reused (same dimensions, batch size, and layout).
+    fn can_reuse_bind_group(
+        &self,
+        n: usize,
+        batch_size: usize,
+        row_stride: usize,
+        matrix_stride: usize,
+    ) -> bool {
         self.bind_group.is_some()
             && self.cached_n == n
+            && self.cached_batch_size == batch_size
             && self.cached_row_stride == row_stride
             && self.cached_matrix_stride == matrix_stride
     }
@@ -343,8 +353,6 @@ impl MetalBatchedLuSolver {
             });
         }
 
-        let total_start = std::time::Instant::now();
-
         let device = &self.ctx.device;
         let queue = &self.ctx.queue;
 
@@ -354,10 +362,8 @@ impl MetalBatchedLuSolver {
         let matrix_stride = layout.padded_matrix_size();
 
         // Convert f64 -> f32 with col-major -> row-major transpose and alignment padding
-        let convert_start = std::time::Instant::now();
         let matrices_f32 = pack_matrices_f32(matrices, n, batch_size, &layout);
         let rhs_f32 = pack_rhs_f32(rhs);
-        let convert_time = convert_start.elapsed();
 
         // Calculate required buffer capacities
         let needed_matrix_elems = matrices_f32.len();
@@ -399,7 +405,9 @@ impl MetalBatchedLuSolver {
             cache.rhs_buffer = Some(device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Batched LU RHS (Cached)"),
                 size: (new_rhs_cap * std::mem::size_of::<f32>()) as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_SRC
+                    | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             }));
 
@@ -407,7 +415,9 @@ impl MetalBatchedLuSolver {
             cache.info_buffer = Some(device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Batched LU Info (Cached)"),
                 size: (new_info_cap * std::mem::size_of::<i32>()) as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_SRC
+                    | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             }));
 
@@ -436,8 +446,8 @@ impl MetalBatchedLuSolver {
         }
 
         // Check if we need to recreate bind group (buffers changed or dimensions changed)
-        let need_bind_group_update =
-            need_buffer_realloc || !cache.can_reuse_bind_group(n, row_stride, matrix_stride);
+        let need_bind_group_update = need_buffer_realloc
+            || !cache.can_reuse_bind_group(n, batch_size, row_stride, matrix_stride);
 
         if need_bind_group_update {
             // Create uniform buffer with stride information for shader
@@ -480,12 +490,12 @@ impl MetalBatchedLuSolver {
             cache.uniform_buffer = Some(uniform_buffer);
             cache.bind_group = Some(bind_group);
             cache.cached_n = n;
+            cache.cached_batch_size = batch_size;
             cache.cached_row_stride = row_stride;
             cache.cached_matrix_stride = matrix_stride;
         }
 
         // Write data to cached buffers
-        let upload_start = std::time::Instant::now();
         queue.write_buffer(
             cache.matrix_buffer.as_ref().unwrap(),
             0,
@@ -504,7 +514,6 @@ impl MetalBatchedLuSolver {
             0,
             bytemuck::cast_slice(&info_zeros),
         );
-        let upload_time = upload_start.elapsed();
 
         // Get references to cached resources
         let bind_group = cache.bind_group.as_ref().unwrap();
@@ -545,15 +554,12 @@ impl MetalBatchedLuSolver {
             (batch_size * std::mem::size_of::<i32>()) as u64,
         );
 
-        let compute_start = std::time::Instant::now();
         queue.submit(std::iter::once(encoder.finish()));
 
         // Drop cache lock before blocking on GPU readback
         drop(cache);
-        let submit_time = compute_start.elapsed();
 
         // Re-acquire read lock to access staging buffers for readback
-        let readback_start = std::time::Instant::now();
         let cache = self.cached.read().unwrap();
         let solution_staging = cache.solution_staging.as_ref().unwrap();
         let info_staging = cache.info_staging.as_ref().unwrap();
@@ -604,16 +610,6 @@ impl MetalBatchedLuSolver {
             singular
         };
 
-        let readback_time = readback_start.elapsed();
-        let total_time = total_start.elapsed();
-
-        // Log timing breakdown for performance analysis
-        log::debug!(
-            "GPU solve batch ({}×{}, {} matrices): total={:?}, convert={:?}, upload={:?}, submit={:?}, readback={:?}",
-            n, n, batch_size,
-            total_time, convert_time, upload_time, submit_time, readback_time
-        );
-
         if !singular_indices.is_empty() {
             log::warn!(
                 "{} of {} matrices were singular",
@@ -653,7 +649,7 @@ mod tests {
         let n = 2;
         let batch_size = 2;
 
-        // Two 2×2 identity matrices in column-major order
+        // Two 2x2 identity matrices in column-major order
         let matrices = vec![
             1.0, 0.0, 0.0, 1.0, // Identity 0
             1.0, 0.0, 0.0, 1.0, // Identity 1
@@ -670,28 +666,12 @@ mod tests {
         assert!(result.singular_indices.is_empty());
 
         let sol0 = result.solution(0).unwrap();
-        assert!(
-            (sol0[0] - 1.0).abs() < 1e-4,
-            "sol0[0] = {} (expected 1.0)",
-            sol0[0]
-        );
-        assert!(
-            (sol0[1] - 2.0).abs() < 1e-4,
-            "sol0[1] = {} (expected 2.0)",
-            sol0[1]
-        );
+        assert!((sol0[0] - 1.0).abs() < 1e-4, "sol0[0] = {} (expected 1.0)", sol0[0]);
+        assert!((sol0[1] - 2.0).abs() < 1e-4, "sol0[1] = {} (expected 2.0)", sol0[1]);
 
         let sol1 = result.solution(1).unwrap();
-        assert!(
-            (sol1[0] - 3.0).abs() < 1e-4,
-            "sol1[0] = {} (expected 3.0)",
-            sol1[0]
-        );
-        assert!(
-            (sol1[1] - 4.0).abs() < 1e-4,
-            "sol1[1] = {} (expected 4.0)",
-            sol1[1]
-        );
+        assert!((sol1[0] - 3.0).abs() < 1e-4, "sol1[0] = {} (expected 3.0)", sol1[0]);
+        assert!((sol1[1] - 4.0).abs() < 1e-4, "sol1[1] = {} (expected 4.0)", sol1[1]);
     }
 
     #[test]
@@ -719,16 +699,8 @@ mod tests {
         assert!(result.singular_indices.is_empty());
 
         let sol = result.solution(0).unwrap();
-        assert!(
-            (sol[0] - 2.0).abs() < 1e-4,
-            "x[0] = {} (expected 2.0)",
-            sol[0]
-        );
-        assert!(
-            (sol[1] - 1.0).abs() < 1e-4,
-            "x[1] = {} (expected 1.0)",
-            sol[1]
-        );
+        assert!((sol[0] - 2.0).abs() < 1e-4, "x[0] = {} (expected 2.0)", sol[0]);
+        assert!((sol[1] - 1.0).abs() < 1e-4, "x[1] = {} (expected 1.0)", sol[1]);
     }
 
     #[test]
@@ -755,10 +727,7 @@ mod tests {
 
         let result = solver.solve_batch(&matrices, &rhs, n, batch_size).unwrap();
 
-        assert!(
-            result.is_singular(1),
-            "Matrix 1 should be detected as singular"
-        );
+        assert!(result.is_singular(1), "Matrix 1 should be detected as singular");
         assert!(!result.is_singular(0), "Matrix 0 should not be singular");
     }
 
@@ -825,73 +794,6 @@ mod tests {
     }
 
     #[test]
-    fn test_timing_breakdown() {
-        let ctx = match try_create_context() {
-            Some(c) => c,
-            None => {
-                eprintln!("Skipping test: no GPU available");
-                return;
-            }
-        };
-
-        let solver = MetalBatchedLuSolver::new(ctx).unwrap();
-
-        // Test multiple configurations
-        let configs = [
-            (50, 1000),
-            (50, 5000),
-            (50, 10000),
-            (100, 1000),
-            (100, 2000),
-        ];
-
-        for (n, batch_size) in configs {
-            // Create batch of diagonally-dominant matrices
-            let mut matrices = Vec::with_capacity(batch_size * n * n);
-            let mut rhs = Vec::with_capacity(batch_size * n);
-
-            for batch_idx in 0..batch_size {
-                for col in 0..n {
-                    for row in 0..n {
-                        let val = if row == col {
-                            10.0 + (batch_idx as f64) * 0.001
-                        } else if (row as i32 - col as i32).abs() == 1 {
-                            -1.0
-                        } else {
-                            0.0
-                        };
-                        matrices.push(val);
-                    }
-                }
-                for i in 0..n {
-                    rhs.push((i + 1) as f64);
-                }
-            }
-
-            // Warm up (first call may have extra overhead)
-            let _ = solver.solve_batch(&matrices, &rhs, n, batch_size).unwrap();
-
-            // Time multiple iterations
-            let iterations = 3;
-            let start = std::time::Instant::now();
-            for _ in 0..iterations {
-                let _ = solver.solve_batch(&matrices, &rhs, n, batch_size).unwrap();
-            }
-            let elapsed = start.elapsed();
-            let avg_time = elapsed / iterations as u32;
-            let time_per_matrix = avg_time / batch_size as u32;
-
-            println!(
-                "GPU: {}x{}, {} batches -> {:?} total, {:?}/matrix",
-                n, n, batch_size, avg_time, time_per_matrix
-            );
-        }
-
-        // This test is informational, always passes
-        assert!(true);
-    }
-
-    #[test]
     fn test_buffer_reallocation_on_size_increase() {
         let ctx = match try_create_context() {
             Some(c) => c,
@@ -931,20 +833,56 @@ mod tests {
             let sol = result2.solution(i).unwrap();
             let expected_0 = (i * 2 + 1) as f64;
             let expected_1 = (i * 2 + 2) as f64;
-            assert!(
-                (sol[0] - expected_0).abs() < 1e-4,
-                "batch {}: sol[0] = {} (expected {})",
-                i,
-                sol[0],
-                expected_0
-            );
-            assert!(
-                (sol[1] - expected_1).abs() < 1e-4,
-                "batch {}: sol[1] = {} (expected {})",
-                i,
-                sol[1],
-                expected_1
-            );
+            assert!((sol[0] - expected_0).abs() < 1e-4,
+                "batch {}: sol[0] = {} (expected {})", i, sol[0], expected_0);
+            assert!((sol[1] - expected_1).abs() < 1e-4,
+                "batch {}: sol[1] = {} (expected {})", i, sol[1], expected_1);
         }
+    }
+
+    #[test]
+    fn test_bind_group_update_on_batch_size_change() {
+        let ctx = match try_create_context() {
+            Some(c) => c,
+            None => {
+                eprintln!("Skipping test: no GPU available");
+                return;
+            }
+        };
+
+        let solver = MetalBatchedLuSolver::new(ctx).unwrap();
+
+        // First solve with batch_size = 4
+        let n = 2;
+        let matrices_4 = vec![
+            1.0, 0.0, 0.0, 1.0, // Identity 0
+            1.0, 0.0, 0.0, 1.0, // Identity 1
+            1.0, 0.0, 0.0, 1.0, // Identity 2
+            1.0, 0.0, 0.0, 1.0, // Identity 3
+        ];
+        let rhs_4 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+
+        let result1 = solver.solve_batch(&matrices_4, &rhs_4, n, 4).unwrap();
+        assert_eq!(result1.batch_size, 4);
+
+        // Now solve with smaller batch_size = 2 (buffers are large enough, but
+        // batch_size in uniform buffer must change)
+        let matrices_2 = vec![
+            1.0, 0.0, 0.0, 1.0, // Identity 0
+            1.0, 0.0, 0.0, 1.0, // Identity 1
+        ];
+        let rhs_2 = vec![10.0, 20.0, 30.0, 40.0];
+
+        let result2 = solver.solve_batch(&matrices_2, &rhs_2, n, 2).unwrap();
+        assert_eq!(result2.batch_size, 2);
+
+        // Verify solutions are correct for the new batch
+        let sol0 = result2.solution(0).unwrap();
+        assert!((sol0[0] - 10.0).abs() < 1e-4, "sol0[0] = {} (expected 10.0)", sol0[0]);
+        assert!((sol0[1] - 20.0).abs() < 1e-4, "sol0[1] = {} (expected 20.0)", sol0[1]);
+
+        let sol1 = result2.solution(1).unwrap();
+        assert!((sol1[0] - 30.0).abs() < 1e-4, "sol1[0] = {} (expected 30.0)", sol1[0]);
+        assert!((sol1[1] - 40.0).abs() < 1e-4, "sol1[1] = {} (expected 40.0)", sol1[1]);
     }
 }

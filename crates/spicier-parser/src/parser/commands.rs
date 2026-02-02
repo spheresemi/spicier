@@ -1,7 +1,9 @@
 //! Command parsing (.DC, .AC, .TRAN, .IC, .PRINT, .MODEL, .PARAM, .SUBCKT, .ENDS).
 
 use spicier_core::units::parse_value;
+use spicier_devices::bjt::BjtParams;
 use spicier_devices::diode::DiodeParams;
+use spicier_devices::jfet::JfetParams;
 use spicier_devices::mosfet::MosfetParams;
 
 use crate::error::{Error, Result};
@@ -496,6 +498,82 @@ impl<'a> Parser<'a> {
                     }
                 }
                 ModelDefinition::Pmos(mp)
+            }
+            "NJF" => {
+                let mut jp = JfetParams::njf_default();
+                for (k, v) in &params {
+                    match k.as_str() {
+                        "VTO" => jp.vto = *v,
+                        "BETA" => jp.beta = *v,
+                        "LAMBDA" => jp.lambda = *v,
+                        "IS" => jp.is = *v,
+                        "CGS" => jp.cgs = *v,
+                        "CGD" => jp.cgd = *v,
+                        _ => {}
+                    }
+                }
+                ModelDefinition::Njf(jp)
+            }
+            "PJF" => {
+                let mut jp = JfetParams::pjf_default();
+                for (k, v) in &params {
+                    match k.as_str() {
+                        "VTO" => jp.vto = *v,
+                        "BETA" => jp.beta = *v,
+                        "LAMBDA" => jp.lambda = *v,
+                        "IS" => jp.is = *v,
+                        "CGS" => jp.cgs = *v,
+                        "CGD" => jp.cgd = *v,
+                        _ => {}
+                    }
+                }
+                ModelDefinition::Pjf(jp)
+            }
+            "NPN" => {
+                let mut bp = BjtParams::npn_default();
+                for (k, v) in &params {
+                    match k.as_str() {
+                        "IS" => bp.is = *v,
+                        "BF" => bp.bf = *v,
+                        "BR" => bp.br = *v,
+                        "NF" => bp.nf = *v,
+                        "NR" => bp.nr = *v,
+                        "VAF" => bp.vaf = *v,
+                        "VAR" => bp.var = *v,
+                        "RB" => bp.rb = *v,
+                        "RE" => bp.re = *v,
+                        "RC" => bp.rc = *v,
+                        "CJE" => bp.cje = *v,
+                        "CJC" => bp.cjc = *v,
+                        "TF" => bp.tf = *v,
+                        "TR" => bp.tr = *v,
+                        _ => {}
+                    }
+                }
+                ModelDefinition::Npn(bp)
+            }
+            "PNP" => {
+                let mut bp = BjtParams::pnp_default();
+                for (k, v) in &params {
+                    match k.as_str() {
+                        "IS" => bp.is = *v,
+                        "BF" => bp.bf = *v,
+                        "BR" => bp.br = *v,
+                        "NF" => bp.nf = *v,
+                        "NR" => bp.nr = *v,
+                        "VAF" => bp.vaf = *v,
+                        "VAR" => bp.var = *v,
+                        "RB" => bp.rb = *v,
+                        "RE" => bp.re = *v,
+                        "RC" => bp.rc = *v,
+                        "CJE" => bp.cje = *v,
+                        "CJC" => bp.cjc = *v,
+                        "TF" => bp.tf = *v,
+                        "TR" => bp.tr = *v,
+                        _ => {}
+                    }
+                }
+                ModelDefinition::Pnp(bp)
             }
             _ => {
                 self.skip_to_eol();

@@ -1,10 +1,13 @@
-//! Element parsing (R, C, L, V, I, D, M, E, G, F, H, B).
+//! Element parsing (R, C, L, V, I, D, M, J, Q, K, E, G, F, H, B).
 
 use spicier_devices::behavioral::{BehavioralCurrentSource, BehavioralVoltageSource};
+use spicier_devices::bjt::{Bjt, BjtParams, BjtType};
 use spicier_devices::controlled::{Cccs, Ccvs, Vccs, Vcvs};
 use spicier_devices::diode::{Diode, DiodeParams};
 use spicier_devices::expression::parse_expression;
+use spicier_devices::jfet::{Jfet, JfetParams, JfetType};
 use spicier_devices::mosfet::{Mosfet, MosfetParams, MosfetType};
+use spicier_devices::mutual::MutualInductance;
 use spicier_devices::passive::{Capacitor, Inductor, Resistor};
 use spicier_devices::sources::{CurrentSource, VoltageSource};
 
@@ -36,6 +39,9 @@ impl<'a> Parser<'a> {
             'I' => self.parse_current_source(name, line),
             'D' => self.parse_diode(name, line),
             'M' => self.parse_mosfet(name, line),
+            'J' => self.parse_jfet(name, line),
+            'Q' => self.parse_bjt(name, line),
+            'K' => self.parse_mutual_inductance(name, line),
             'E' => self.parse_vcvs(name, line),
             'G' => self.parse_vccs(name, line),
             'F' => self.parse_cccs(name, line),
@@ -303,6 +309,112 @@ impl<'a> Parser<'a> {
         let mosfet =
             Mosfet::with_params(name, node_drain, node_gate, node_source, mos_type, params);
         self.netlist.add_device(mosfet);
+
+        self.skip_to_eol();
+        Ok(())
+    }
+
+    /// Parse J1 drain gate source [modelname]
+    fn parse_jfet(&mut self, name: &str, line: usize) -> Result<()> {
+        self.advance(); // consume name
+
+        let node_drain = self.expect_node(line)?;
+        let node_gate = self.expect_node(line)?;
+        let node_source = self.expect_node(line)?;
+
+        // Optional model name
+        let mut jfet_type = JfetType::Njf;
+        let mut params = JfetParams::njf_default();
+
+        // Try to read model name
+        if let Token::Name(n) = self.peek() {
+            let model_name = n.clone().to_uppercase();
+            if !model_name.contains('=') {
+                self.advance();
+                match self.models.get(&model_name) {
+                    Some(ModelDefinition::Njf(jp)) => {
+                        jfet_type = JfetType::Njf;
+                        params = jp.clone();
+                    }
+                    Some(ModelDefinition::Pjf(jp)) => {
+                        jfet_type = JfetType::Pjf;
+                        params = jp.clone();
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let jfet = Jfet::with_params(name, node_drain, node_gate, node_source, jfet_type, params);
+        self.netlist.add_device(jfet);
+
+        self.skip_to_eol();
+        Ok(())
+    }
+
+    /// Parse Q1 collector base emitter [modelname]
+    fn parse_bjt(&mut self, name: &str, line: usize) -> Result<()> {
+        self.advance(); // consume name
+
+        let node_collector = self.expect_node(line)?;
+        let node_base = self.expect_node(line)?;
+        let node_emitter = self.expect_node(line)?;
+
+        // Optional model name
+        let mut bjt_type = BjtType::Npn;
+        let mut params = BjtParams::npn_default();
+
+        // Try to read model name
+        if let Token::Name(n) = self.peek() {
+            let model_name = n.clone().to_uppercase();
+            if !model_name.contains('=') {
+                self.advance();
+                match self.models.get(&model_name) {
+                    Some(ModelDefinition::Npn(bp)) => {
+                        bjt_type = BjtType::Npn;
+                        params = bp.clone();
+                    }
+                    Some(ModelDefinition::Pnp(bp)) => {
+                        bjt_type = BjtType::Pnp;
+                        params = bp.clone();
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let bjt =
+            Bjt::with_params(name, node_collector, node_base, node_emitter, bjt_type, params);
+        self.netlist.add_device(bjt);
+
+        self.skip_to_eol();
+        Ok(())
+    }
+
+    /// Parse K1 L1 L2 coupling_coefficient
+    fn parse_mutual_inductance(&mut self, name: &str, line: usize) -> Result<()> {
+        self.advance(); // consume name
+
+        let l1_name = self.expect_name(line)?;
+        let l2_name = self.expect_name(line)?;
+        let coupling = self.expect_value(line)?;
+
+        // Create the mutual inductance element
+        // Note: The inductor branch indices and values will need to be resolved
+        // after all inductors are parsed. For now, we store the names.
+        let mut mutual = MutualInductance::new(name, &l1_name, &l2_name, coupling);
+
+        // Try to resolve the inductor references immediately if they exist
+        if let (Some(l1_idx), Some(l2_idx)) = (
+            self.netlist.find_vsource_branch_index(&l1_name),
+            self.netlist.find_vsource_branch_index(&l2_name),
+        ) {
+            // For now we set inductance values to 0; they'll be resolved during simulation
+            // A more complete implementation would look up the inductor values
+            mutual.resolve(l1_idx, l2_idx, 0.0, 0.0);
+        }
+
+        self.netlist.add_device(mutual);
 
         self.skip_to_eol();
         Ok(())
