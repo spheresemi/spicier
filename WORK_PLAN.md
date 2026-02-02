@@ -489,6 +489,41 @@ Crossover point: ~n=50. Accelerate wins big for medium/large circuits.
 
 ---
 
+## Phase 8c: Parallel CPU Sweeps (Rayon)
+
+**Goal:** Leverage multi-core parallelism for batched sweeps using rayon. Each sweep point is independent, making this embarrassingly parallel.
+
+**Rationale:** On Apple Silicon, Accelerate is very fast but single-threaded per call. Parallel iteration over sweep points using rayon can provide 8-16x speedup on M3 Ultra (8 P-cores) without GPU complexity.
+
+### Tasks
+
+- [ ] Add rayon dependency to spicier-batched-sweep
+- [ ] Implement parallel sweep iteration
+  - `par_iter()` over sweep points
+  - Each thread assembles and solves independently
+  - Thread-local matrix/RHS buffers to avoid allocation contention
+- [ ] Chunk size tuning
+  - Optimal chunk size depends on matrix size and core count
+  - Auto-tune based on problem size
+- [ ] Thread-safe result collection
+  - Pre-allocate result buffer
+  - Each thread writes to its slice
+
+**Benchmark Target (M3 Ultra, 1000×100):**
+| Backend | Current | Target |
+|---------|---------|--------|
+| Accelerate (1 thread) | 50 ms | — |
+| Accelerate (8 P-cores) | — | ~6 ms |
+
+**Dependencies:** Phase 8b (Accelerate integration)
+
+**Acceptance Criteria:**
+- [ ] 1000×100 sweep <10ms on M3 Ultra
+- [ ] Linear scaling up to physical core count
+- [ ] No correctness regressions
+
+---
+
 ## Phase 9: Compute Backend Abstraction & GPU Acceleration
 
 **Goal:** Abstract compute dispatch behind a backend trait with automatic hardware detection, enabling GPU acceleration for sweeps, device evaluation, and large-circuit solves while maintaining a robust CPU fallback.
@@ -541,17 +576,22 @@ Crossover point: ~n=50. Accelerate wins big for medium/large circuits.
   - Double-buffering for overlapping compute and transfer
   - Upload matrix structure once, stream value diffs per sweep point
 
-### 9b: Batched Sweep Solver (Primary GPU Win) — REQUIRED FOR v0.1.0
+### 9b: Batched Sweep Solver (GPU)
 
-**Key Insight:** Sweeps are embarrassingly parallel. The goal is to saturate GPU resources with many independent direct solves running simultaneously, not to make one solve faster with iterative methods.
+**Current Status:** Metal GPU implementation has ~10ms overhead that makes it slower than Accelerate for tested matrix sizes. Benchmarks on M3 Ultra:
 
-**Architecture by Matrix Size:**
+| Config | Accelerate | Metal GPU | Gap |
+|--------|------------|-----------|-----|
+| 1000×10 | 728 µs | 11 ms | Metal 15x slower |
+| 1000×50 | 13.7 ms | 24 ms | Metal 1.8x slower |
+| 1000×100 | 50 ms | 77 ms | Metal 1.5x slower |
 
-| Circuit Size | Parallelism Strategy | Implementation |
-|--------------|---------------------|----------------|
-| N < ~32 | Warp-per-matrix | One warp (32 threads) solves one system; all systems in parallel |
-| 32 < N < ~256 | Threadblock-per-matrix | One threadblock per system; in-block parallelism for factorization |
-| N > 256 | Multiple SMs per matrix | Larger systems need more parallelism per solve |
+**Root Cause:** Per-call buffer allocation, synchronous completion, f64↔f32 conversion overhead.
+
+**Goal:** Reduce GPU overhead to find the crossover point where GPU beats CPU. Expected wins:
+- Very large batches (>10k sweep points) where overhead is amortized
+- Larger matrices (>256×256) where GPU parallelism dominates
+- NVIDIA CUDA should have lower overhead than Metal/wgpu
 
 **✅ Completed - Backend Infrastructure:**
 
@@ -571,7 +611,31 @@ Crossover point: ~n=50. Accelerate wins big for medium/large circuits.
 
 ---
 
-#### 9b-1: Truly Batched MPS Operations ⬅️ NEXT
+#### 9b-1: Metal GPU Overhead Reduction ⬅️ NEXT PRIORITY
+
+Current Metal implementation has ~10ms overhead from per-call buffer allocation and synchronous completion. This must be fixed for GPU to be competitive.
+
+- [ ] Buffer pool / reuse
+  - Pre-allocate buffers for common sizes (n=32, 64, 128, 256)
+  - `SolverPool` struct that caches allocated buffers
+  - Reuse across solve_batch() calls
+- [ ] Async command submission
+  - Return immediately after queue.submit()
+  - Provide Future/callback for completion notification
+  - Allow multiple batches in flight
+- [ ] Combined readback
+  - Single staging buffer for solutions + info
+  - One map_async instead of two
+- [ ] Benchmark at larger scales
+  - Test 10k, 100k batch sizes
+  - Test 256×256, 512×512 matrices
+  - Find crossover point where GPU beats Accelerate
+
+**Acceptance:** Metal overhead reduced from ~10ms to <1ms. Identify matrix/batch size where GPU wins.
+
+---
+
+#### 9b-2: Truly Batched MPS Operations
 
 Current MPS implementation processes matrices sequentially due to batching API issues.
 
@@ -581,27 +645,9 @@ Current MPS implementation processes matrices sequentially due to batching API i
 - [ ] Parallel command buffer submission
   - Multiple command buffers in flight simultaneously
   - Use completion handlers for pipelining
-- [ ] Fallback decision: If MPS batching unresolvable, prefer wgpu custom shaders for batched workloads
+- [ ] Compare with wgpu custom shaders after 9b-1 optimization
 
 **Acceptance:** MPS processes N matrices in parallel, not sequentially.
-
----
-
-#### 9b-2: Memory Layout Optimization
-
-Optimize data layout for GPU memory access patterns.
-
-- [ ] Contiguous batch storage
-  - All matrices packed into single buffer (batch × n × n)
-  - All RHS vectors packed into single buffer (batch × n)
-- [ ] Alignment padding
-  - Pad matrix rows to warp size (32) for coalesced access
-  - Pad batch count to avoid partial warps
-- [ ] Structure-of-Arrays for device parameters
-  - Diode: separate arrays for Is, n, node_pos, node_neg
-  - MOSFET: separate arrays for Vth, beta, lambda, nodes
-
-**Acceptance:** Benchmark shows >20% improvement from layout optimization.
 
 ---
 
@@ -616,64 +662,69 @@ Hide CPU matrix assembly latency behind GPU computation.
 - [ ] Async GPU dispatch
   - Non-blocking solve submission
   - Completion callback triggers next batch
-- [ ] Batch size tuning
-  - Find optimal batch size for pipeline balance
-  - Too small: GPU starved; too large: memory pressure
 
 **Acceptance:** Pipeline hides >50% of assembly latency.
 
 ---
 
-#### 9b-4: Shared Sparsity Structure
+#### 9b-4: Memory Layout Optimization
 
-Sweep matrices share the same sparsity pattern, only values differ.
+Optimize data layout for GPU memory access patterns.
 
-- [ ] Symbolic structure caching
+- [ ] Contiguous batch storage
+  - All matrices packed into single buffer (batch × n × n)
+  - All RHS vectors packed into single buffer (batch × n)
+- [ ] Alignment padding
+  - Pad matrix rows to warp size (32) for coalesced access
+  - Pad batch count to avoid partial warps
+
+**Acceptance:** Benchmark shows >20% improvement from layout optimization.
+
+---
+
+#### 9b-5: Shared Sparsity Structure
+
+Sweep matrices share the same sparsity pattern, only values differ. Benefits both CPU and GPU paths.
+
+- [ ] Symbolic structure caching for sparse sweeps
   - Compute sparsity pattern once from first sweep point
-  - Store CSR/CSC index arrays on GPU
+  - Reuse symbolic factorization (already done for single solves)
 - [ ] Value-only updates
-  - Upload only non-zero values per sweep point
-  - Reuse row/column index buffers
-- [ ] Incremental stamping
-  - Track which matrix entries change between points
-  - Only update changed values
+  - Only update changed matrix values per sweep point
 
-**Acceptance:** Sweep of 1000 points uploads structure once, values 1000 times.
+**Acceptance:** Sweep of 1000 points reuses symbolic factorization.
 
 ---
 
-#### 9b-5: GPU-Side Random Number Generation
+#### 9b-6: GPU-Side Random Number Generation ✅
 
-Avoid CPU→GPU transfer of random parameters for Monte Carlo.
+Implemented hash-based RNG for GPU-parallel Monte Carlo.
 
-- [ ] CUDA: cuRAND integration
-  - Device-side RNG state
-  - Generate parameters directly on GPU
-- [ ] Metal: MPSMatrixRandom or custom LCG
-  - MPS random matrix generation
-  - Or lightweight custom PRNG in compute shader
-- [ ] Seeded reproducibility
-  - User-specified seed for reproducible runs
-  - Per-stream seeds for parallel generation
+- [x] Hash-based stateless RNG (`rng.rs`)
+  - SplitMix64 hash function for mixing
+  - `uniform(seed, sweep_idx, param_idx)` returns [0, 1)
+  - `gaussian(seed, sweep_idx, param_idx)` via Box-Muller transform
+  - f64 and f32 versions
+- [x] GPU shader code ready for integration
+  - `WGSL_RNG_CODE` for Metal/WebGPU compute shaders
+  - `CUDA_RNG_CODE` for NVIDIA kernels
+- [x] Seeded reproducibility
+  - Same seed → deterministic sequence
+  - Each (sweep_idx, param_idx) gets unique value
+- [x] Batch generation helper
+  - `generate_gaussian_parameters(seed, num_sweeps, means, sigmas)`
 
-**Acceptance:** 10k Monte Carlo samples with zero CPU→GPU random data transfer.
+**Acceptance:** ✅ 10 tests pass, GPU shader code ready.
 
 ---
 
-#### 9b-6: GPU-Side Statistics
+#### 9b-7: GPU-Side Statistics
 
 Compute sweep statistics without CPU round-trip.
 
-- [ ] Reduction kernels
-  - Sum, min, max via parallel reduction
-  - Mean = sum / count
-  - Variance via Welford's algorithm or two-pass
+- [ ] Reduction kernels (sum, min, max, mean, variance)
 - [ ] Histogram computation
-  - Atomic histogram binning on GPU
-  - Configurable bin count and range
 - [ ] Yield analysis
-  - Count passing/failing points per specification
-  - Return only pass/fail counts, not all solutions
 
 **Acceptance:** 10k-point sweep returns statistics without transferring all solutions to CPU.
 
