@@ -1,0 +1,7 @@
+RC Circuit with .PRINT TRAN
+V1 1 0 5
+R1 1 2 1k
+C1 2 0 1u IC=0
+.PRINT TRAN V(2)
+.TRAN 0.1m 5m
+.END

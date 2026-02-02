@@ -978,7 +978,6 @@ fn run_transient(
     node_map: &std::collections::HashMap<String, NodeId>,
     print_vars: &[&OutputVariable],
 ) -> Result<()> {
-    let _ = print_vars; // Will use for filtered output later
     println!(
         "Transient Analysis (.TRAN {} {} {}{})",
         tstep, tstop, tstart, if uic { " UIC" } else { "" }
@@ -1074,16 +1073,16 @@ fn run_transient(
         .map_err(|e| anyhow::anyhow!("Transient error: {}", e))?;
 
     // 5. Print tabular output
-    let num_nodes = netlist.num_nodes();
+    let nodes_to_print = get_dc_print_nodes(print_vars, node_map, netlist.num_nodes());
 
     // Header
     print!("{:>14}", "Time");
-    for i in 1..=num_nodes {
-        print!("{:>14}", format!("V({})", i));
+    for (name, _) in &nodes_to_print {
+        print!("{:>14}", format!("V({})", name));
     }
     println!();
 
-    let width = 14 * (1 + num_nodes);
+    let width = 14 * (1 + nodes_to_print.len());
     println!("{}", "-".repeat(width));
 
     // Data (skip points before tstart)
@@ -1092,9 +1091,10 @@ fn run_transient(
             continue;
         }
         print!("{:>14.6e}", point.time);
-        for i in 0..num_nodes {
-            let v = if i < point.solution.len() {
-                point.solution[i]
+        for (_, node_id) in &nodes_to_print {
+            let idx = (node_id.as_u32() - 1) as usize;
+            let v = if idx < point.solution.len() {
+                point.solution[idx]
             } else {
                 0.0
             };
