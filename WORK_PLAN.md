@@ -1066,19 +1066,63 @@ CPU ILU(0) + GPU GMRES provides good performance without the complexity.
 - CPU ILU factorization: O(nnz) time, reusable across NR iterations
 - Memory: ~10MB for 50k nodes with 10 nnz/row
 
-### 9e: Post-Processing & Analysis on GPU
+### 9e: Post-Processing & Analysis ✅ COMPLETE
 
-- [ ] Transient waveform post-processing
-  - FFT / spectral analysis on output waveforms (cuFFT / Accelerate vDSP)
-  - THD computation, spectral density
-  - Avoids large waveform transfer back to CPU for analysis
-- [ ] Sensitivity analysis / adjoint method
-  - dOutput/dParam for every parameter — each perturbation is independent
-  - GPU-parallel forward or adjoint sensitivity solves
-  - Useful for optimization and yield analysis
-- [ ] Pole-zero analysis
-  - Eigenvalue problems on the linearized system
-  - GPU-accelerated eigensolvers (cuSOLVER)
+CPU-based implementation chosen over GPU because:
+- cudarc doesn't expose cuFFT bindings
+- Metal/WebGPU has no native FFT library
+- GPU only wins for N > 2^16 points (rare in circuit sim)
+- rustfft is highly optimized (SIMD, cache-aware)
+
+#### 9e-1: Spectral Analysis Module ✅
+- [x] FFT via rustfft with configurable window functions
+  - `SpectralConfig`: window type, FFT size, zero-padding
+  - `SpectralResult`: frequencies, magnitude, magnitude_db, phase, PSD
+  - `compute_fft()` from TransientResult
+  - `compute_fft_from_samples()` for raw data
+  - `resample_uniform()` for non-uniform transient data
+- [x] Window functions (Hanning, Hamming, Blackman, Rectangular)
+  - Coherent gain computation for amplitude correction
+- [x] THD (Total Harmonic Distortion) computation
+  - `ThdResult`: THD%, THD_dB, fundamental, harmonics breakdown
+  - `HarmonicInfo`: per-harmonic magnitude, phase, relative %
+  - Automatic harmonic extraction near expected frequencies
+
+**Implementation:** `spicier-solver/src/spectral/` (fft.rs, window.rs, thd.rs)
+
+#### 9e-2: Sensitivity Analysis ✅
+- [x] DC sensitivity via forward finite differences
+  - `DcSensitivityStamper` trait for circuit perturbation
+  - `DcSensitivityResult`: raw and normalized sensitivities
+  - `compute_dc_sensitivity()` for all param-output combinations
+- [x] AC sensitivity analysis
+  - `AcSensitivityStamper` trait for AC perturbation
+  - `AcSensitivityResult`: magnitude, phase, complex sensitivities
+  - `compute_ac_sensitivity()` at single frequency
+  - `compute_ac_sensitivity_sweep()` across frequency range
+- [x] Configuration types
+  - `SensitivityParam`: R, C, L, V, I, device/model params
+  - `SensitivityOutput`: voltage, current, voltage diff
+  - `SensitivityConfig`: delta ratio, params, outputs
+
+**Implementation:** `spicier-solver/src/sensitivity/` (config.rs, dc.rs, ac.rs)
+
+#### 9e-3: Batch Spectral Analysis ✅
+- [x] Parallel THD for Monte Carlo sweeps (rayon)
+  - `compute_batch_thd()` - parallel THD across waveforms
+  - `compute_batch_thd_with_stats()` - THD + statistics
+  - `ThdStatistics`: mean, std, min, max, median, yield%
+- [x] Batch FFT statistics
+  - `compute_batch_fft_stats()` - parallel FFT across waveforms
+  - `BatchSpectralResult`: mean/std/min/max magnitude per bin
+
+**Implementation:** `spicier-batched-sweep/src/spectral.rs`
+
+#### 9e-4: Pole-Zero Analysis (DEFERRED)
+GPU eigenvalue analysis deferred:
+- cudarc doesn't expose cuSOLVER eigensolvers
+- Metal/WebGPU has no eigenvalue support
+- Limited practical value vs complexity
 
 **Dependencies:** Phase 7c (sparse-only MNA), Phase 8
 
@@ -1097,7 +1141,8 @@ CPU ILU(0) + GPU GMRES provides good performance without the complexity.
 2. **Linear solve** → Parallel CPU (Accelerate + rayon)
 3. **Statistics** → GPU reduction kernels
 4. **Matrix assembly** → GPU parallel stamping (in progress)
-- [ ] README documents GPU performance characteristics
+5. **Post-processing** → CPU (rustfft for FFT, finite-diff for sensitivity)
+- [x] README documents GPU performance characteristics
 
 ---
 
