@@ -10,6 +10,7 @@
 //! - `metal` - Enable Metal backend (Apple GPUs)
 //! - `accelerate` - Enable Apple Accelerate framework (macOS optimized LAPACK)
 //! - `faer` - Enable faer backend (high-performance SIMD CPU)
+//! - `parallel` - Enable parallel CPU sweeps using rayon
 //!
 //! # Usage
 //!
@@ -43,6 +44,7 @@ pub mod convergence;
 mod error;
 pub mod rng;
 mod solver;
+pub mod statistics;
 mod sweep;
 
 #[cfg(feature = "cuda")]
@@ -62,6 +64,9 @@ mod faer_sparse_solver;
 
 #[cfg(feature = "accelerate")]
 mod accelerate_solver;
+
+#[cfg(feature = "parallel")]
+mod parallel;
 
 pub use error::{BatchedSweepError, Result};
 pub use solver::{
@@ -94,3 +99,8 @@ pub use faer_sparse_solver::{FaerSparseCachedBatchedSolver, FaerTripletBatchedSo
 
 #[cfg(feature = "accelerate")]
 pub use accelerate_solver::AccelerateBatchedSolver;
+
+#[cfg(feature = "parallel")]
+pub use parallel::{
+    solve_batched_sweep_parallel, solve_batched_sweep_parallel_auto, ParallelSweepConfig,
+};

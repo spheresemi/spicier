@@ -748,15 +748,28 @@ Implemented hash-based RNG for GPU-parallel Monte Carlo.
 
 ---
 
-#### 9b-7: GPU-Side Statistics
+#### 9b-7: GPU-Side Statistics ✅
 
 Compute sweep statistics without CPU round-trip.
 
-- [ ] Reduction kernels (sum, min, max, mean, variance)
-- [ ] Histogram computation
-- [ ] Yield analysis
+- [x] Reduction kernels (sum, min, max, mean, variance)
+  - `StatisticsAccumulator` with mergeable partial results for parallel reduction
+  - `SweepStatistics` with count, min, max, mean, variance, std_dev
+  - `compute_statistics()` / `compute_all_statistics()` for sweep results
+- [x] Histogram computation
+  - `Histogram` with configurable bins, auto min/max detection
+  - `Histogram::from_sweep()` for direct sweep analysis
+  - Mode detection, bin percentages
+- [x] Yield analysis
+  - `YieldSpec` for single-node pass/fail checking
+  - `YieldAnalysis` for multi-specification yield
+  - `SweepSummary` combining statistics + yield
 
-**Acceptance:** 10k-point sweep returns statistics without transferring all solutions to CPU.
+**GPU shader code:**
+- `WGSL_REDUCTION_CODE` - Tree-based parallel reduction for Metal/WebGPU
+- `CUDA_REDUCTION_CODE` - Warp shuffle + block reduction for NVIDIA
+
+**Implementation:** `spicier-batched-sweep/src/statistics.rs`
 
 ---
 

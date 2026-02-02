@@ -1810,3 +1810,90 @@ fn get_a(batch_idx: u32, row: u32, col: u32) -> f32 {
 - Matrix offset calculations
 - Pack/unpack round-trips
 - Padding statistics
+
+### 9b-7: GPU-Side Statistics
+
+Implemented statistics computation infrastructure for sweep analysis with GPU-ready parallel reduction algorithms.
+
+**New module: `spicier-batched-sweep/src/statistics.rs`**
+
+**Key types:**
+
+```rust
+// Per-node statistics across all sweep points
+struct SweepStatistics {
+    count: usize,
+    min: f64, max: f64,
+    mean: f64, variance: f64, std_dev: f64,
+    sum: f64,
+}
+
+// Mergeable accumulator for parallel reduction
+struct StatisticsAccumulator {
+    count: usize,
+    sum: f64, sum_sq: f64,
+    min: f64, max: f64,
+}
+
+// Distribution analysis
+struct Histogram {
+    bins: Vec<HistogramBin>,
+    min: f64, max: f64, bin_width: f64,
+}
+
+// Pass/fail specification checking
+struct YieldSpec { node_idx, lower_limit, upper_limit }
+struct YieldAnalysis { specs: Vec<YieldSpec> }
+
+// Complete sweep summary
+struct SweepSummary {
+    statistics: Vec<SweepStatistics>,
+    yield_percentage: Option<f64>,
+    individual_yields: Option<Vec<f64>>,
+}
+```
+
+**API:**
+```rust
+// Single node statistics
+let stats = compute_statistics(&solutions, n, batch_size, node_idx);
+println!("Mean: {:.3} ± {:.3}", stats.mean, stats.std_dev);
+
+// All nodes at once
+let all_stats = compute_all_statistics(&solutions, n, batch_size);
+
+// Histogram for distribution analysis
+let hist = Histogram::from_sweep(&solutions, n, batch_size, node_idx, 20);
+let mode_bin = hist.mode_bin();
+
+// Yield analysis
+let spec = YieldSpec::new(0, 0.9, 1.1);  // Node 0 must be in [0.9, 1.1]
+let yield_pct = spec.compute_yield(&solutions, n, batch_size);
+
+// Multi-spec yield
+let analysis = YieldAnalysis::new(vec![
+    YieldSpec::new(0, 0.9, 1.1),
+    YieldSpec::new(1, 4.5, 5.5),
+]);
+let overall_yield = analysis.compute_yield(&solutions, n, batch_size);
+```
+
+**GPU shader code constants:**
+- `WGSL_REDUCTION_CODE` - Tree-based parallel reduction with workgroup shared memory
+- `CUDA_REDUCTION_CODE` - Warp shuffle reduction + block-level reduction
+
+**Parallel reduction design:**
+- Each thread accumulates partial statistics
+- Tree reduction within workgroup (log2(N) steps)
+- Final reduction across workgroups on CPU (small data)
+- Mergeable `StatsAccum` structure in shaders
+
+**Tests:** 13 tests covering:
+- Basic statistics computation
+- Single value edge case
+- Accumulator merging (key for parallel reduction)
+- Per-node and all-node statistics
+- Histogram binning and mode detection
+- Yield specification checking
+- Multi-spec yield analysis
+- Complete sweep summary
