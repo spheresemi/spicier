@@ -960,3 +960,23 @@ In nested sweeps, the first source is the outer (slow) sweep and the second is t
 
 **Tests:** 1 new parser test (test_parse_dc_command_nested_sweep)
 **New examples:** nested_dc_sweep.sp
+
+### Transient .PRINT Output Filtering
+
+Implemented `.PRINT TRAN` output filtering so transient analysis respects the specified output variables instead of printing all nodes.
+
+- Removed `let _ = print_vars` placeholder in `run_transient()`
+- Uses `get_dc_print_nodes()` to determine which nodes to print (consistent with DC analysis)
+- Only specified nodes appear in transient output when `.PRINT TRAN` is present
+
+**New examples:**
+- `print_test_tran.sp` - RC circuit with `.PRINT TRAN V(2)` showing filtered output
+- `rc_charging_uic.sp` - RC charging with UIC demonstrating exponential rise
+
+### README Update
+
+Updated README.md to reflect current project status:
+- Test count updated from 106 to 255
+- Crate count updated from 5 to 9 (added simd, backend-cpu, backend-cuda, backend-metal)
+- Moved completed features from "in progress" to "completed" (adaptive timestep, AC linearization)
+- Added new completed features: TR-BDF2, UIC, .PRINT, SIMD, batched evaluation, GMRES, backend abstraction
