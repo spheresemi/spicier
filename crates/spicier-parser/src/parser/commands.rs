@@ -64,6 +64,9 @@ impl<'a> Parser<'a> {
             "MEAS" | "MEASURE" => {
                 self.parse_meas_command(line)?;
             }
+            "NOISE" => {
+                self.parse_noise_command(line)?;
+            }
             _ => {
                 // Unknown command - skip to EOL
                 self.skip_to_eol();
@@ -204,6 +207,148 @@ impl<'a> Parser<'a> {
         let fstop = self.expect_value(line)?;
 
         self.analyses.push(AnalysisCommand::Ac {
+            sweep_type,
+            num_points,
+            fstart,
+            fstop,
+        });
+
+        self.skip_to_eol();
+        Ok(())
+    }
+
+    /// Parse .NOISE V(output[,ref]) Vinput type npoints fstart fstop
+    ///
+    /// Examples:
+    /// - `.NOISE V(out) V1 DEC 10 1 1MEG` - Single-ended output
+    /// - `.NOISE V(out,ref) V1 DEC 10 1 1MEG` - Differential output
+    fn parse_noise_command(&mut self, line: usize) -> Result<()> {
+        // Parse output specification: V(node) or V(node,ref)
+        let output_name = match self.peek() {
+            Token::Name(n) => {
+                let n = n.clone();
+                self.advance();
+                n
+            }
+            _ => {
+                return Err(Error::ParseError {
+                    line,
+                    message: "expected output specification (e.g., V(out)) for .NOISE".to_string(),
+                });
+            }
+        };
+
+        // Parse V(node) or V(node,ref)
+        let (output_node, output_ref_node) = if output_name.to_uppercase() == "V" {
+            // Expect ( node )
+            if !matches!(self.peek(), Token::LParen) {
+                return Err(Error::ParseError {
+                    line,
+                    message: "expected '(' after V in .NOISE".to_string(),
+                });
+            }
+            self.advance(); // consume (
+
+            let node = match self.peek() {
+                Token::Name(n) | Token::Value(n) => {
+                    let n = n.clone();
+                    self.advance();
+                    n
+                }
+                _ => {
+                    return Err(Error::ParseError {
+                        line,
+                        message: "expected output node name in .NOISE".to_string(),
+                    });
+                }
+            };
+
+            // Check for optional reference node
+            let ref_node = if matches!(self.peek(), Token::Comma) {
+                self.advance(); // consume ,
+                match self.peek() {
+                    Token::Name(n) | Token::Value(n) => {
+                        let n = n.clone();
+                        self.advance();
+                        Some(n)
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+
+            // Expect )
+            if !matches!(self.peek(), Token::RParen) {
+                return Err(Error::ParseError {
+                    line,
+                    message: "expected ')' in .NOISE output specification".to_string(),
+                });
+            }
+            self.advance(); // consume )
+
+            (node, ref_node)
+        } else {
+            return Err(Error::ParseError {
+                line,
+                message: format!(
+                    "expected V(node) for .NOISE output, got '{}'",
+                    output_name
+                ),
+            });
+        };
+
+        // Parse input source name
+        let input_source = match self.peek() {
+            Token::Name(n) | Token::Value(n) => {
+                let n = n.clone();
+                self.advance();
+                n
+            }
+            _ => {
+                return Err(Error::ParseError {
+                    line,
+                    message: "expected input source name for .NOISE".to_string(),
+                });
+            }
+        };
+
+        // Parse sweep type (DEC, OCT, LIN)
+        let sweep_type = match self.peek() {
+            Token::Name(n) => {
+                let st = match n.to_uppercase().as_str() {
+                    "DEC" => AcSweepType::Dec,
+                    "OCT" => AcSweepType::Oct,
+                    "LIN" => AcSweepType::Lin,
+                    other => {
+                        return Err(Error::ParseError {
+                            line,
+                            message: format!(
+                                "unknown sweep type '{}' for .NOISE (expected DEC, OCT, or LIN)",
+                                other
+                            ),
+                        });
+                    }
+                };
+                self.advance();
+                st
+            }
+            _ => {
+                return Err(Error::ParseError {
+                    line,
+                    message: "expected sweep type (DEC, OCT, LIN) for .NOISE".to_string(),
+                });
+            }
+        };
+
+        let num_points = self.expect_value(line)? as usize;
+        let fstart = self.expect_value(line)?;
+        let fstop = self.expect_value(line)?;
+
+        self.analyses.push(AnalysisCommand::Noise {
+            output_node,
+            output_ref_node,
+            input_source,
             sweep_type,
             num_points,
             fstart,

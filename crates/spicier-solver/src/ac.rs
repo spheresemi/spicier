@@ -45,6 +45,7 @@ pub struct AcParams {
 ///
 /// Uses sparse triplet storage - duplicate entries are summed when constructing
 /// the sparse matrix. Dense matrix can be built on demand for small circuits.
+#[derive(Clone)]
 pub struct ComplexMna {
     rhs: DVector<Complex<f64>>,
     num_nodes: usize,

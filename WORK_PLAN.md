@@ -1390,16 +1390,20 @@ Post-processing measurements extract key metrics from simulation results.
 - [x] Measurement result output in CLI (tabular format)
 - [x] Error reporting for failed measurements
 
-### 12c: Noise Analysis
+### 12c: Noise Analysis ✅
 
 Small-signal noise analysis for analog circuit design.
 
-- [ ] Thermal noise (resistors): 4kTR
-- [ ] Shot noise (diodes, BJTs): 2qI
-- [ ] Flicker noise (MOSFETs): Kf/f
-- [ ] Noise figure calculation
-- [ ] Input/output referred noise
-- [ ] Noise spectral density plots
+- [x] Thermal noise (resistors): 4kTR ✅
+- [x] Shot noise (diodes, BJTs): 2qI ✅
+- [x] Flicker noise (MOSFETs): Kf/f ✅
+- [x] Input/output referred noise ✅
+- [x] Noise contributions by source ✅
+- [x] Equivalent input noise resistance ✅
+- [x] Integrated noise over frequency range ✅
+- [x] .NOISE command parser support ✅
+- [ ] Noise figure calculation (future)
+- [ ] Noise spectral density file output (future)
 
 ### 12d: Additional Device Models
 
@@ -1506,7 +1510,7 @@ Small-signal noise analysis for analog circuit design.
 ### Planned (Phase 12)
 - [x] .PARAM / parameter expressions ✅
 - [x] .MEASURE statements ✅
-- [ ] Noise analysis
+- [x] Noise analysis ✅
 - [x] K element (mutual inductance / coupled inductors / transformers) ✅
 - [x] Q element (BJT — Ebers-Moll model) ✅
 - [x] J element (JFET — Shichman-Hodges model) ✅

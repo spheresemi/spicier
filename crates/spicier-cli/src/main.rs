@@ -14,7 +14,9 @@ use spicier_parser::{
     AnalysisCommand, DcSweepType, MeasureAnalysis, Measurement, PrintAnalysisType, parse_full,
 };
 
-use analysis::{run_ac_analysis, run_dc_op, run_dc_param_sweep, run_dc_sweep, run_transient};
+use analysis::{
+    run_ac_analysis, run_dc_op, run_dc_param_sweep, run_dc_sweep, run_noise_analysis, run_transient,
+};
 use backend::detect_backend;
 
 #[derive(Parser)]
@@ -102,6 +104,7 @@ fn run_simulation(input: &PathBuf, cli: &Cli) -> Result<()> {
                         }
                         AnalysisCommand::Ac { .. } => ".AC".to_string(),
                         AnalysisCommand::Tran { .. } => ".TRAN".to_string(),
+                        AnalysisCommand::Noise { .. } => ".NOISE".to_string(),
                         _ => "(unknown analysis)".to_string(),
                     })
                     .collect::<Vec<_>>()
@@ -201,6 +204,27 @@ fn run_simulation(input: &PathBuf, cli: &Cli) -> Result<()> {
                     &node_map,
                     &print_vars,
                     &tran_measurements,
+                )?;
+            }
+            AnalysisCommand::Noise {
+                output_node,
+                output_ref_node,
+                input_source,
+                sweep_type,
+                num_points,
+                fstart,
+                fstop,
+            } => {
+                run_noise_analysis(
+                    &netlist,
+                    output_node,
+                    output_ref_node.as_deref(),
+                    input_source,
+                    *sweep_type,
+                    *num_points,
+                    *fstart,
+                    *fstop,
+                    &node_map,
                 )?;
             }
             _ => {

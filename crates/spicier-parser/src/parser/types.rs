@@ -75,6 +75,23 @@ pub enum AnalysisCommand {
         /// Use Initial Conditions - skip DC operating point, use .IC values directly.
         uic: bool,
     },
+    /// Noise analysis (.NOISE V(output) Vinput sweep_type npoints fstart fstop).
+    Noise {
+        /// Output node name (e.g., "out" or "2").
+        output_node: String,
+        /// Optional reference node for differential output.
+        output_ref_node: Option<String>,
+        /// Input source name (e.g., "V1").
+        input_source: String,
+        /// Frequency sweep type.
+        sweep_type: AcSweepType,
+        /// Number of points (per decade/octave for log, total for linear).
+        num_points: usize,
+        /// Start frequency in Hz.
+        fstart: f64,
+        /// Stop frequency in Hz.
+        fstop: f64,
+    },
 }
 
 /// Initial condition for a node voltage.

@@ -127,6 +127,7 @@ pub mod ilu;
 pub mod linear;
 pub mod measure;
 pub mod newton;
+pub mod noise;
 pub mod operator;
 pub mod parallel;
 pub mod preconditioner;
@@ -190,6 +191,10 @@ pub use sensitivity::{
 pub use spectral::{
     HarmonicInfo, SpectralConfig, SpectralResult, ThdResult, WindowFunction, compute_fft,
     compute_fft_from_samples, compute_thd, compute_thd_from_samples, resample_uniform,
+};
+pub use noise::{
+    NoiseConfig, NoiseContribution, NoiseResult, NoiseSource, NoiseSourceType, NoiseStamper,
+    NoiseSweepType, compute_noise,
 };
 pub use transient::{
     AdaptiveTransientParams, AdaptiveTransientResult, CapacitorState, InductorState,

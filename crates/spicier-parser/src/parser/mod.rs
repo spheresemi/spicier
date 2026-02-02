@@ -1730,4 +1730,100 @@ R1 1 0 {R}
             panic!("Expected DC analysis command");
         }
     }
+
+    // =========================================================================
+    // .NOISE command tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_noise_command_basic() {
+        let input = r#"Noise Test
+V1 1 0 AC 1
+R1 1 2 1k
+R2 2 0 1k
+.NOISE V(2) V1 DEC 10 1 1MEG
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+
+        let noise_cmd = result.analyses.iter().find(|a| {
+            matches!(a, super::types::AnalysisCommand::Noise { .. })
+        });
+
+        assert!(noise_cmd.is_some(), "Expected NOISE analysis command");
+
+        if let Some(super::types::AnalysisCommand::Noise {
+            output_node,
+            output_ref_node,
+            input_source,
+            sweep_type,
+            num_points,
+            fstart,
+            fstop,
+        }) = noise_cmd
+        {
+            assert_eq!(output_node, "2");
+            assert!(output_ref_node.is_none());
+            assert_eq!(input_source.to_uppercase(), "V1");
+            assert_eq!(*sweep_type, super::types::AcSweepType::Dec);
+            assert_eq!(*num_points, 10);
+            assert!((fstart - 1.0).abs() < 1e-10);
+            assert!((fstop - 1e6).abs() < 1.0);
+        }
+    }
+
+    #[test]
+    fn test_parse_noise_command_differential() {
+        let input = r#"Differential Noise Test
+V1 1 0 AC 1
+R1 1 2 1k
+R2 2 3 1k
+R3 3 0 1k
+.NOISE V(2,3) V1 DEC 10 100 100k
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+
+        if let Some(super::types::AnalysisCommand::Noise {
+            output_node,
+            output_ref_node,
+            ..
+        }) = result.analyses.iter().find(|a| {
+            matches!(a, super::types::AnalysisCommand::Noise { .. })
+        })
+        {
+            assert_eq!(output_node, "2");
+            assert_eq!(output_ref_node.as_deref(), Some("3"));
+        } else {
+            panic!("Expected NOISE analysis command");
+        }
+    }
+
+    #[test]
+    fn test_parse_noise_command_lin_sweep() {
+        let input = r#"Linear Noise Sweep
+V1 1 0 AC 1
+R1 1 0 1k
+.NOISE V(1) V1 LIN 100 100 10k
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+
+        if let Some(super::types::AnalysisCommand::Noise {
+            sweep_type,
+            num_points,
+            ..
+        }) = result.analyses.iter().find(|a| {
+            matches!(a, super::types::AnalysisCommand::Noise { .. })
+        })
+        {
+            assert_eq!(*sweep_type, super::types::AcSweepType::Lin);
+            assert_eq!(*num_points, 100);
+        } else {
+            panic!("Expected NOISE analysis command");
+        }
+    }
 }
