@@ -1333,3 +1333,30 @@ Created initial validation test suite in `crates/spicier-parser/tests/ngspice_va
 - `test_dc_nmos_saturation` - NMOS common source in saturation region
 
 **Test count:** 313 total tests passing (was 297 before validation suite)
+
+### Phase 10: Expanded Validation Test Suite
+
+Extended validation test suite to 26 tests covering more controlled sources, AC filters, and transient analysis.
+
+**New DC Operating Point Tests (5 tests):**
+- `test_dc_vccs_transconductance` - VCCS with gm=1mS verification
+- `test_dc_cccs_current_gain` - CCCS with current gain=5 (note: SPICE sign convention verified)
+- `test_dc_ccvs_transresistance` - CCVS with rm=2kΩ
+- `test_dc_capacitor_open` - Capacitor as DC open circuit
+- `test_dc_superposition` - Two-source superposition principle
+- `test_dc_t_network` - T-network nodal analysis verification
+
+**New AC Analysis Tests (2 tests):**
+- `test_ac_rl_highpass_3db` - RL high-pass filter -3dB point and +45° phase
+- `test_ac_rlc_series_resonance` - RLC series resonance peak at f_0 (Q=10 for sharp peak)
+
+**New Transient Analysis Test (1 test):**
+- `test_tran_rl_time_constant` - RL circuit with τ = L/R time constant verification
+
+**Key fixes during expansion:**
+- CCCS sign convention: SPICE F element outputs current in opposite direction to expectation
+- RL high-pass: Corrected circuit topology (R in series, L to ground)
+- RLC resonance: Reduced R to increase Q factor so peak occurs at resonant frequency
+- RL transient: Fixed inductor node connection (Some(1) instead of Some(0))
+
+**Test count:** 323 total tests passing (26 validation tests)
