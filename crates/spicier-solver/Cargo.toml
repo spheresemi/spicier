@@ -10,8 +10,10 @@ keywords = ["spice", "circuit", "solver", "newton-raphson", "gmres"]
 categories = ["science", "simulation", "mathematics"]
 
 [features]
-default = []
+default = ["accelerate"]
 cuda = []
+# Apple Accelerate framework (macOS only) - uses dgesv_ for 2-3x faster dense LU
+accelerate = []
 
 [dependencies]
 spicier-core.workspace = true
