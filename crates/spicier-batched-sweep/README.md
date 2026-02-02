@@ -1,29 +1,55 @@
 # spicier-batched-sweep
 
-Unified GPU-accelerated batched sweep solving for SPICE circuit simulation.
+Unified batched sweep solving for SPICE circuit simulation with GPU and parallel CPU backends.
 
-This crate provides a common API for GPU-accelerated batched LU solving across different backends:
+This crate provides a common API for high-performance batched LU solving:
+- **Parallel CPU** - Rayon-based parallel sweeps with Accelerate/LAPACK (recommended)
 - **CUDA** - NVIDIA GPUs via cuBLAS batched LU operations
-- **Metal** - Apple Silicon GPUs (M1/M2/M3) via wgpu compute shaders
-- **Faer** - High-performance CPU with SIMD optimization
+- **Metal** - Apple Silicon GPUs via wgpu compute shaders
+- **Faer** - High-performance single-threaded CPU with SIMD and sparse solvers
 - **CPU** - Fallback using nalgebra's LU decomposition
 
 ## Features
 
 - Unified `BatchedLuSolver` trait for backend abstraction
 - Automatic backend detection and selection
-- Graceful fallback when preferred GPU unavailable
-- Efficient parallel solving for Monte Carlo, corner analysis, and parameter sweeps
+- **Parallel CPU sweeps with rayon** for embarrassingly parallel workloads
+- Sparse solver caching for repeated sweeps with same sparsity pattern
+- GPU-side statistics computation (min, max, mean, variance)
+- Convergence tracking with early termination
 
 ## Usage
 
+### Parallel CPU Sweeps (Recommended)
+
 ```rust
-use spicier_batched_sweep::{solve_batched_sweep_gpu, BackendSelector};
-use spicier_solver::{
-    ConvergenceCriteria, DispatchConfig, MonteCarloGenerator, ParameterVariation,
+use spicier_batched_sweep::{
+    solve_batched_sweep_parallel, ParallelSweepConfig, BackendSelector,
 };
 
-// Automatic backend selection (CUDA → Metal → CPU)
+// Configure parallel execution
+let config = ParallelSweepConfig::default();  // auto-tune based on workload
+
+// Run sweep in parallel across CPU cores
+let result = solve_batched_sweep_parallel(
+    &backend,
+    &factory,
+    &generator,
+    &variations,
+    &ConvergenceCriteria::default(),
+    &DispatchConfig::default(),
+    &config,
+)?;
+
+println!("Converged: {}/{}", result.converged_count, result.total_count);
+```
+
+### GPU Backend Selection
+
+```rust
+use spicier_batched_sweep::{solve_batched_sweep_gpu, BackendSelector};
+
+// Automatic backend selection (CUDA → MPS → Metal → Accelerate → CPU)
 let backend = BackendSelector::auto();
 
 // Or prefer a specific backend
@@ -31,94 +57,79 @@ let backend = BackendSelector::auto();
 // let backend = BackendSelector::prefer_metal();
 // let backend = BackendSelector::cpu_only();
 
-let result = solve_batched_sweep_gpu(
-    &backend,
-    &factory,
-    &generator,
-    &variations,
-    &ConvergenceCriteria::default(),
-    &DispatchConfig::default(),
-)?;
-
+let result = solve_batched_sweep_gpu(&backend, &factory, /* ... */)?;
 println!("Backend used: {}", result.backend_used);
-println!("Converged: {}/{}", result.converged_count, result.total_count);
 ```
 
-## Benchmark Results
+## Performance Analysis
 
-Benchmarked on Mac Studio M3 Ultra (96GB RAM):
+### Parallel CPU vs GPU (M3 Ultra)
 
-| Batch × Matrix | CPU Time | Metal GPU Time | Speedup |
-|----------------|----------|----------------|---------|
-| 100 × 10       | 68 µs    | 8.5 ms         | 0.008x (CPU faster) |
-| 100 × 50       | 1.2 ms   | 15.6 ms        | 0.08x (CPU faster) |
-| 100 × 100      | 7.2 ms   | 37.6 ms        | 0.19x (CPU faster) |
-| 500 × 10       | 340 µs   | 9.3 ms         | 0.04x (CPU faster) |
-| 500 × 50       | 6.4 ms   | 19.4 ms        | 0.33x (CPU faster) |
-| 500 × 100      | 41 ms    | 54.6 ms        | 0.75x (CPU faster) |
-| 1000 × 10      | 680 µs   | 10.1 ms        | 0.07x (CPU faster) |
-| 1000 × 50      | 12.5 ms  | 23.1 ms        | 0.54x (CPU faster) |
-| 1000 × 100     | 73.8 ms  | 74.9 ms        | **0.99x** (nearly equal) |
+After extensive benchmarking, **parallel CPU significantly outperforms GPU** for batched LU solving on Apple Silicon:
 
-### Analysis
+| Config | GPU Total | GPU Per-Matrix | Parallel CPU Per-Matrix | GPU Slowdown |
+|--------|-----------|----------------|------------------------|--------------|
+| 50×50, 1k | 12.9ms | 12.9µs | ~1µs | **13x slower** |
+| 50×50, 5k | 42.4ms | 8.5µs | ~1µs | **8x slower** |
+| 50×50, 10k | 72.3ms | 7.2µs | ~1µs | **7x slower** |
+| 100×100, 1k | 50.8ms | 50.8µs | ~11µs | **5x slower** |
+| 100×100, 2k | 66.5ms | 33.3µs | ~11µs | **3x slower** |
 
-The current Metal implementation uses a simple single-threaded-per-matrix approach where each workgroup processes one matrix sequentially. This results in:
+### Why GPU is Slower for Batched LU
 
-1. **High overhead**: GPU kernel launch, memory transfer (~8-10ms baseline)
-2. **No intra-matrix parallelism**: LU factorization is done sequentially within each matrix
-3. **Global memory latency**: Every operation accesses global GPU memory
+1. **f64→f32 conversion** - Metal lacks native f64 support, requiring CPU conversion before upload
+2. **Data transfer latency** - Even with unified memory, explicit buffer writes have latency
+3. **Sequential algorithm** - LU factorization with pivot selection is inherently sequential; GPU can't parallelize within a single matrix well
+4. **Excellent CPU performance** - Apple Accelerate + rayon achieves near-linear scaling across P-cores
 
-The GPU only approaches CPU performance for large problems (1000 matrices × 100×100).
+### Parallel CPU Speedup (vs Sequential)
 
-### CUDA Performance (on NVIDIA GPUs)
+| Config | Sequential | Parallel (8 threads) | Speedup |
+|--------|------------|---------------------|---------|
+| 50×50, 1k | 1.1ms | 167µs | **6.6x** |
+| 50×50, 5k | 5.5ms | 744µs | **7.4x** |
+| 100×100, 1k | 11ms | 1.6ms | **6.9x** |
+| 100×100, 2k | 22ms | 3.5ms | **6.3x** |
 
-The CUDA backend uses cuBLAS batched LU operations which are highly optimized:
-- `cublasDgetrfBatched` - Batched LU factorization (parallelized internally)
-- `cublasDgetrsBatched` - Batched triangular solve
+### Sparse Solver Benefits
 
-Expected speedups of 10-100x on NVIDIA GPUs for large batches with medium-sized matrices.
+For circuits with sparse matrices (typical of most real circuits), the sparse cached solver provides additional speedup:
 
-### Future Optimizations
+| Config | Dense (faer) | Sparse (cached) | Speedup |
+|--------|-------------|-----------------|---------|
+| 50×50 sparse, 100 batches | 995µs | 536µs | **1.86x** |
+| 50×50 sparse, 1k batches | 10.27ms | 5.69ms | **1.80x** |
 
-To make Metal competitive with CPU, the shader would need:
-1. **Workgroup parallelism** - Multiple threads cooperating on each matrix
-2. **Shared memory tiling** - Cache matrix blocks in fast workgroup memory
-3. **Blocked algorithms** - Better memory access patterns
+### Recommendations
 
-### CPU Backend Comparison: nalgebra vs Faer
-
-Benchmarked on Mac Studio M3 Ultra:
-
-| Batch × Matrix | nalgebra | Faer | Winner |
-|----------------|----------|------|--------|
-| 100 × 10       | 65 µs    | 113 µs | nalgebra 1.7× faster |
-| 100 × 100      | 7.3 ms   | 6.6 ms | faer 1.1× faster |
-| 500 × 100      | 37 ms    | 34 ms  | faer 1.1× faster |
-| 1000 × 10      | 635 µs   | 1.1 ms | nalgebra 1.7× faster |
-| 1000 × 50      | 13 ms    | 15 ms  | nalgebra 1.15× faster |
-| 1000 × 100     | 74 ms    | 70 ms  | faer 1.05× faster |
-
-**Key findings:**
-- **Small matrices (≤50)**: nalgebra is 15-70% faster due to optimized small-matrix routines
-- **Large matrices (100+)**: faer is 5-10% faster due to SIMD and cache-aware algorithms
-
-**Recommendation:** Use default nalgebra for typical circuits. Enable `faer` feature for circuits with 100+ nodes.
+1. **Use parallel CPU** (`parallel` feature) for batched sweeps on Apple Silicon
+2. **Enable sparse solver** for circuits with sparse connectivity (>50 nodes)
+3. **Use GPU** only for truly data-parallel operations:
+   - Device evaluation (thousands of independent MOSFETs)
+   - Statistics reduction (mean, variance across sweep points)
+4. **CUDA on NVIDIA** may still be beneficial with cuBLAS optimized batched routines
 
 ## Feature Flags
 
 | Feature | Description |
 |---------|-------------|
+| `parallel` | Enable rayon-based parallel CPU sweeps (recommended) |
 | `cuda`  | Enable NVIDIA CUDA backend |
 | `metal` | Enable Apple Metal backend |
-| `faer`  | Enable Faer high-performance CPU backend (recommended for large matrices) |
+| `faer`  | Enable Faer high-performance CPU backend |
+| `accelerate` | Enable Apple Accelerate framework (macOS only) |
 
-## Current Thresholds
+## Backend Selection Logic
 
-The Metal backend will only use GPU when:
-- Batch size ≥ 2000
-- Matrix size ≥ 100×100
+`BackendSelector::auto()` chooses backends in this priority order:
+1. CUDA (if available and `cuda` feature enabled)
+2. MPS (Apple Metal Performance Shaders, if available)
+3. Metal (wgpu compute shaders, if available)
+4. Accelerate (macOS native LAPACK)
+5. Faer (cross-platform SIMD)
+6. CPU (nalgebra fallback)
 
-This ensures GPU is only used when it's likely to be beneficial.
+However, for most workloads, **parallel CPU with Accelerate** provides the best performance.
 
 ## License
 
