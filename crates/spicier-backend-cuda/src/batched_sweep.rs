@@ -6,12 +6,12 @@ use crate::batched_lu::CudaBatchedLuSolver;
 use crate::context::CudaContext;
 use crate::error::Result as CudaResult;
 use nalgebra::DVector;
+#[cfg(test)]
+use spicier_solver::SweepStamper;
 use spicier_solver::{
     ConvergenceCriteria, DispatchConfig, ParameterVariation, SweepPoint, SweepPointGenerator,
     SweepStamperFactory, SweepStatistics,
 };
-#[cfg(test)]
-use spicier_solver::SweepStamper;
 use std::sync::Arc;
 
 /// Result of a GPU-accelerated batched sweep analysis.

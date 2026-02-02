@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/spicier",
     "crates/spicier-core",
     "crates/spicier-simd",
     "crates/spicier-solver",
@@ -9,6 +10,7 @@ members = [
     "crates/spicier-backend-cpu",
     "crates/spicier-backend-cuda",
     "crates/spicier-backend-metal",
+    "crates/spicier-batched-sweep",
     "crates/spicier-cli",
     "crates/spicier-validate",
 ]
@@ -21,6 +23,7 @@ repository = "https://github.com/rwalters/spicier"
 
 [workspace.dependencies]
 # Internal crates
+spicier = { path = "crates/spicier", version = "0.1.0" }
 spicier-core = { path = "crates/spicier-core", version = "0.1.0" }
 spicier-simd = { path = "crates/spicier-simd", version = "0.1.0" }
 spicier-solver = { path = "crates/spicier-solver", version = "0.1.0" }
@@ -29,6 +32,7 @@ spicier-parser = { path = "crates/spicier-parser", version = "0.1.0" }
 spicier-backend-cpu = { path = "crates/spicier-backend-cpu", version = "0.1.0" }
 spicier-backend-cuda = { path = "crates/spicier-backend-cuda", version = "0.1.0" }
 spicier-backend-metal = { path = "crates/spicier-backend-metal", version = "0.1.0" }
+spicier-batched-sweep = { path = "crates/spicier-batched-sweep", version = "0.1.0" }
 
 # Error handling
 thiserror = "2"

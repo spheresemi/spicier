@@ -10,6 +10,6 @@ pub use batched_lu::{
     BatchedMatrices, BatchedPivots, BatchedSolveResult, BatchedVectors, CudaBatchedLuSolver,
     GpuBatchedSweepConfig, MAX_BATCH_SIZE, MIN_BATCH_SIZE, MIN_MATRIX_SIZE,
 };
-pub use batched_sweep::{solve_batched_sweep_gpu, GpuBatchedSweepResult};
+pub use batched_sweep::{GpuBatchedSweepResult, solve_batched_sweep_gpu};
 pub use context::CudaContext;
 pub use error::{CudaError, Result};

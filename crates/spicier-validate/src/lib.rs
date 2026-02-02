@@ -157,7 +157,7 @@ pub fn validate_against_golden(circuit: &GoldenCircuit) -> Result<ComparisonRepo
                 magnitude_db: tolerances.mag_db,
                 phase_deg: tolerances.phase_deg,
             };
-            Ok(compare_ac(&ng, sp, &tol, Some(&[node.clone()])))
+            Ok(compare_ac(&ng, sp, &tol, Some(std::slice::from_ref(node))))
         }
         (
             GoldenAnalysis::Tran {
@@ -179,7 +179,7 @@ pub fn validate_against_golden(circuit: &GoldenCircuit) -> Result<ComparisonRepo
                 voltage_rel: 1e-3,
                 time_shift: 0.0,
             };
-            Ok(compare_transient(&ng, sp, &tol, Some(&[node.clone()])))
+            Ok(compare_transient(&ng, sp, &tol, Some(std::slice::from_ref(node))))
         }
         _ => Err(Error::AnalysisTypeMismatch {
             expected: "golden analysis type".to_string(),

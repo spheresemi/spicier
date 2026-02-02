@@ -25,7 +25,7 @@
 use crate::context::CudaContext;
 use crate::error::{CudaError, Result};
 use cudarc::cublas::sys::{
-    cublasOperation_t, cublasStatus_t, cublasDgetrfBatched, cublasDgetrsBatched,
+    cublasDgetrfBatched, cublasDgetrsBatched, cublasOperation_t, cublasStatus_t,
 };
 use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
 use std::sync::Arc;
@@ -448,11 +448,9 @@ impl CudaBatchedLuSolver {
             let (pivot_ptr, _pivot_guard) = pivots.pivots.device_ptr(stream);
             let (b_ptrs, _b_guard) = gpu_rhs.pointers.device_ptr(stream);
 
-            let mut getrs_info: CudaSlice<i32> = self
-                .ctx
-                .stream
-                .alloc_zeros(1)
-                .map_err(|e| CudaError::MemoryAlloc(format!("getrs info allocation failed: {}", e)))?;
+            let mut getrs_info: CudaSlice<i32> = self.ctx.stream.alloc_zeros(1).map_err(|e| {
+                CudaError::MemoryAlloc(format!("getrs info allocation failed: {}", e))
+            })?;
             let (getrs_info_ptr, _getrs_info_guard) = getrs_info.device_ptr_mut(stream);
 
             let status = unsafe {
@@ -607,8 +605,16 @@ mod tests {
         assert!(result.singular_indices.is_empty());
 
         let sol = result.solution(0).unwrap();
-        assert!((sol[0] - 2.0).abs() < 1e-9, "x[0] = {} (expected 2.0)", sol[0]);
-        assert!((sol[1] - 1.0).abs() < 1e-9, "x[1] = {} (expected 1.0)", sol[1]);
+        assert!(
+            (sol[0] - 2.0).abs() < 1e-9,
+            "x[0] = {} (expected 2.0)",
+            sol[0]
+        );
+        assert!(
+            (sol[1] - 1.0).abs() < 1e-9,
+            "x[1] = {} (expected 1.0)",
+            sol[1]
+        );
     }
 
     #[test]
@@ -638,7 +644,10 @@ mod tests {
 
         let result = result.unwrap();
         // The singular matrix should be detected
-        assert!(result.is_singular(1), "Matrix 1 should be detected as singular");
+        assert!(
+            result.is_singular(1),
+            "Matrix 1 should be detected as singular"
+        );
         assert!(!result.is_singular(0), "Matrix 0 should not be singular");
     }
 

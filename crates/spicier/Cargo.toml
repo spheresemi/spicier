@@ -1,0 +1,36 @@
+[package]
+name = "spicier"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "A high-performance SPICE circuit simulator written in Rust"
+keywords = ["spice", "circuit", "simulator", "electronics", "eda"]
+categories = ["science", "simulation", "command-line-utilities"]
+readme = "README.md"
+
+[features]
+default = []
+cuda = ["spicier-solver/cuda", "dep:spicier-backend-cuda"]
+metal = ["dep:spicier-backend-metal"]
+full = ["cuda", "metal"]
+
+[dependencies]
+# Core crates (always included)
+spicier-core.workspace = true
+spicier-devices.workspace = true
+spicier-parser.workspace = true
+spicier-solver.workspace = true
+spicier-simd.workspace = true
+
+# Optional backends
+spicier-backend-cpu.workspace = true
+spicier-backend-cuda = { workspace = true, optional = true }
+spicier-backend-metal = { workspace = true, optional = true }
+
+# Re-export key dependencies for convenience
+nalgebra.workspace = true
+num-complex.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true

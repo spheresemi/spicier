@@ -1981,6 +1981,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
+name = "spicier"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "nalgebra",
+ "num-complex",
+ "spicier-backend-cpu",
+ "spicier-backend-cuda",
+ "spicier-backend-metal",
+ "spicier-core",
+ "spicier-devices",
+ "spicier-parser",
+ "spicier-simd",
+ "spicier-solver",
+]
+
+[[package]]
 name = "spicier-backend-cpu"
 version = "0.1.0"
 dependencies = [
@@ -2010,6 +2027,18 @@ dependencies = [
  "pollster",
  "spicier-solver",
  "wgpu",
+]
+
+[[package]]
+name = "spicier-batched-sweep"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "nalgebra",
+ "spicier-backend-cuda",
+ "spicier-backend-metal",
+ "spicier-solver",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
