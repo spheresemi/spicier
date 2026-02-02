@@ -532,7 +532,7 @@ For circuits with 50k+ nodes, sparse LU factorization itself is the bottleneck.
 ## Future Considerations
 
 - [x] Subcircuit/hierarchical netlists (.SUBCKT/.ENDS) — implemented with nested expansion
-- Behavioral sources (B elements)
+- [x] Behavioral sources (B elements) — expression AST with voltage/current/time refs, auto-diff for NR
 - Noise analysis
 - Additional MOSFET models (BSIM3/BSIM4)
 - S-parameter analysis

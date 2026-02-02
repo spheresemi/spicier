@@ -97,11 +97,12 @@ Completed:
 * Device models: R, L, C, V, I (passive + sources) with MNA stamps
 * Nonlinear devices: Diode (Shockley equation), MOSFET Level 1 (NMOS/PMOS)
 * Controlled sources: VCVS (E), VCCS (G), CCCS (F), CCVS (H) with MNA stamps
+* Behavioral sources (B elements) with arbitrary expression parsing (V(node), I(device), time, math functions)
 * Dense linear solver (LU decomposition) — real and complex
 * Sparse linear solver (faer LU) — real and complex, auto-selected for systems with 50+ variables
 * Newton-Raphson nonlinear solver with convergence criteria, voltage limiting, source stepping, Gmin stepping
 * Nonlinear DC operating point via Newton-Raphson (auto-dispatched when diodes/MOSFETs present)
-* SPICE netlist parser (R, C, L, V, I, D, M, E, G, F, H elements; .MODEL; SI suffixes)
+* SPICE netlist parser (R, C, L, V, I, D, M, E, G, F, H, B elements; .SUBCKT/.ENDS; .MODEL; SI suffixes)
 * DC operating point analysis (.OP) with CLI integration
 * Transient analysis (.TRAN) — Backward Euler, Trapezoidal, and TR-BDF2 integration with adaptive timestep
 * AC small-signal analysis (.AC) — Linear, Decade, and Octave sweeps with automatic linearization
@@ -112,7 +113,7 @@ Completed:
 * Batched device evaluation for diodes and MOSFETs (SoA layout, AVX2 kernels)
 * GMRES iterative solver with Jacobi preconditioner for large systems
 * Compute backend abstraction (CPU, CUDA, Metal) with automatic detection
-* 255 tests passing, clippy clean
+* 297 tests passing, clippy clean
 * GitHub Actions CI (Linux, macOS, Windows), benchmarking infrastructure
 
 In progress:
