@@ -456,6 +456,313 @@ fn eval_mosfet(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
+// ============================================================================
+// Diode Evaluation
+// ============================================================================
+
+/// Diode model parameters for GPU evaluation.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
+pub struct GpuDiodeParams {
+    /// Saturation current (A).
+    pub is: f32,
+    /// Emission coefficient.
+    pub n: f32,
+    /// Thermal voltage (V) - typically ~0.026V at room temp.
+    pub vt: f32,
+    /// Padding for alignment.
+    pub _pad: f32,
+}
+
+impl Default for GpuDiodeParams {
+    fn default() -> Self {
+        Self {
+            is: 1e-14,
+            n: 1.0,
+            vt: 0.02585, // 300K
+            _pad: 0.0,
+        }
+    }
+}
+
+/// Results from diode evaluation.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
+pub struct DiodeEvalResult {
+    /// Diode current (A).
+    pub id: f32,
+    /// Diode conductance dId/dVd (S).
+    pub gd: f32,
+}
+
+/// GPU kernel for batched diode evaluation.
+pub struct GpuDiodeEvaluator {
+    ctx: Arc<WgpuContext>,
+    pipeline: wgpu::ComputePipeline,
+    bind_group_layout: wgpu::BindGroupLayout,
+}
+
+impl GpuDiodeEvaluator {
+    /// Create a new diode evaluator.
+    pub fn new(ctx: Arc<WgpuContext>) -> Result<Self> {
+        let shader = ctx.device().create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Diode Evaluation Shader"),
+            source: wgpu::ShaderSource::Wgsl(DIODE_SHADER.into()),
+        });
+
+        let bind_group_layout =
+            ctx.device()
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("Diode Eval Bind Group Layout"),
+                    entries: &[
+                        // Params buffer (uniform)
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        // Vd input buffer
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        // Output buffer (Id, gd)
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 2,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: false },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                    ],
+                });
+
+        let pipeline_layout =
+            ctx.device()
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Diode Eval Pipeline Layout"),
+                    bind_group_layouts: &[&bind_group_layout],
+                    push_constant_ranges: &[],
+                });
+
+        let pipeline = ctx
+            .device()
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Diode Eval Pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some("eval_diode"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+
+        Ok(Self {
+            ctx,
+            pipeline,
+            bind_group_layout,
+        })
+    }
+
+    /// Evaluate diodes for all devices × all sweep points.
+    ///
+    /// # Arguments
+    /// * `params` - Diode model parameters
+    /// * `vd` - Diode voltages (anode - cathode), length = num_devices × num_sweeps
+    ///
+    /// # Returns
+    /// Results array with Id, gd for each device × sweep.
+    pub fn evaluate(&self, params: &GpuDiodeParams, vd: &[f32]) -> Result<Vec<DiodeEvalResult>> {
+        let count = vd.len();
+        if count == 0 {
+            return Ok(vec![]);
+        }
+
+        // Create uniform buffer for params
+        let params_buffer = self
+            .ctx
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Diode Params"),
+                contents: bytemuck::bytes_of(params),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
+        // Create input buffer
+        let vd_buffer = self
+            .ctx
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Vd Input"),
+                contents: bytemuck::cast_slice(vd),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+
+        // Create output buffer
+        let output_size = (count * std::mem::size_of::<DiodeEvalResult>()) as u64;
+        let output_buffer = self.ctx.device().create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Diode Output"),
+            size: output_size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        // Create staging buffer for readback
+        let staging_buffer = self.ctx.device().create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Diode Output Staging"),
+            size: output_size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Create bind group
+        let bind_group = self
+            .ctx
+            .device()
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Diode Eval Bind Group"),
+                layout: &self.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: params_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: vd_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: output_buffer.as_entire_binding(),
+                    },
+                ],
+            });
+
+        // Dispatch compute
+        let mut encoder = self
+            .ctx
+            .device()
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Diode Eval Encoder"),
+            });
+
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Diode Eval Pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+
+            let workgroups = (count as u32 + 255) / 256;
+            pass.dispatch_workgroups(workgroups, 1, 1);
+        }
+
+        // Copy to staging
+        encoder.copy_buffer_to_buffer(&output_buffer, 0, &staging_buffer, 0, output_size);
+
+        self.ctx.queue().submit(std::iter::once(encoder.finish()));
+
+        // Read back results
+        let buffer_slice = staging_buffer.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            tx.send(result).unwrap();
+        });
+        self.ctx.device().poll(wgpu::Maintain::Wait);
+        rx.recv()
+            .map_err(|_| WgpuError::Compute("Failed to receive map result".into()))?
+            .map_err(|e| WgpuError::Buffer(format!("Buffer map failed: {:?}", e)))?;
+
+        let data = buffer_slice.get_mapped_range();
+        let results: Vec<DiodeEvalResult> = bytemuck::cast_slice(&data).to_vec();
+        drop(data);
+        staging_buffer.unmap();
+
+        Ok(results)
+    }
+
+    /// Evaluate with timing information for benchmarking.
+    pub fn evaluate_timed(
+        &self,
+        params: &GpuDiodeParams,
+        vd: &[f32],
+    ) -> Result<(Vec<DiodeEvalResult>, std::time::Duration)> {
+        let start = std::time::Instant::now();
+        let results = self.evaluate(params, vd)?;
+        let elapsed = start.elapsed();
+        Ok((results, elapsed))
+    }
+}
+
+/// WGSL shader for diode evaluation.
+///
+/// Shockley diode equation with voltage limiting.
+const DIODE_SHADER: &str = r#"
+struct DiodeParams {
+    is: f32,    // Saturation current
+    n: f32,     // Emission coefficient
+    vt: f32,    // Thermal voltage
+    _pad: f32,
+}
+
+struct DiodeResult {
+    id: f32,    // Current
+    gd: f32,    // Conductance
+}
+
+@group(0) @binding(0) var<uniform> params: DiodeParams;
+@group(0) @binding(1) var<storage, read> vd_in: array<f32>;
+@group(0) @binding(2) var<storage, read_write> results: array<DiodeResult>;
+
+@compute @workgroup_size(256)
+fn eval_diode(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if idx >= arrayLength(&vd_in) {
+        return;
+    }
+
+    let vd = vd_in[idx];
+    let nvt = params.n * params.vt;
+
+    // Voltage limiting to prevent exp() overflow
+    // Critical voltage where exp() starts to overflow
+    let vcrit = nvt * log(nvt / (params.is * 1.41421356));  // sqrt(2) ≈ 1.414
+
+    var vd_limited: f32;
+    if vd > vcrit {
+        // Log compression for large forward bias
+        let arg = (vd - vcrit) / nvt;
+        vd_limited = vcrit + nvt * log(1.0 + arg);
+    } else {
+        vd_limited = vd;
+    }
+
+    // Shockley equation: Id = Is * (exp(Vd / nVt) - 1)
+    let exp_term = exp(vd_limited / nvt);
+    let id = params.is * (exp_term - 1.0);
+
+    // Conductance: gd = dId/dVd = Is * exp(Vd / nVt) / nVt
+    let gd = params.is * exp_term / nvt;
+
+    // Ensure minimum conductance for numerical stability
+    results[idx] = DiodeResult(id, max(gd, 1e-12));
+}
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -618,5 +925,87 @@ mod tests {
         assert_eq!(results.len(), 1);
         // PMOS current flows from source to drain (negative Id convention)
         assert!(results[0].id < 0.0, "PMOS Id should be negative: {}", results[0].id);
+    }
+
+    // ========================================================================
+    // Diode Tests
+    // ========================================================================
+
+    #[test]
+    fn test_diode_forward_bias() {
+        let ctx = match create_context() {
+            Ok(c) => c,
+            Err(_) => {
+                eprintln!("Skipping test: no GPU available");
+                return;
+            }
+        };
+
+        let evaluator = GpuDiodeEvaluator::new(ctx).unwrap();
+        let params = GpuDiodeParams::default();
+
+        // Forward bias: Vd = 0.7V
+        let vd = vec![0.7];
+        let results = evaluator.evaluate(&params, &vd).unwrap();
+
+        assert_eq!(results.len(), 1);
+        // At 0.7V forward bias, current should be significant (mA range)
+        assert!(results[0].id > 1e-6, "Id should be > 1µA at 0.7V: {}", results[0].id);
+        assert!(results[0].gd > 0.0, "gd should be positive");
+    }
+
+    #[test]
+    fn test_diode_reverse_bias() {
+        let ctx = match create_context() {
+            Ok(c) => c,
+            Err(_) => {
+                eprintln!("Skipping test: no GPU available");
+                return;
+            }
+        };
+
+        let evaluator = GpuDiodeEvaluator::new(ctx).unwrap();
+        let params = GpuDiodeParams::default();
+
+        // Reverse bias: Vd = -1.0V
+        let vd = vec![-1.0];
+        let results = evaluator.evaluate(&params, &vd).unwrap();
+
+        assert_eq!(results.len(), 1);
+        // Reverse bias: current should be ~-Is (very small negative)
+        assert!(results[0].id < 0.0, "Id should be negative in reverse: {}", results[0].id);
+        assert!(results[0].id.abs() < 1e-12, "Id should be ~-Is: {}", results[0].id);
+    }
+
+    #[test]
+    fn test_diode_batch_performance() {
+        let ctx = match create_context() {
+            Ok(c) => c,
+            Err(_) => {
+                eprintln!("Skipping test: no GPU available");
+                return;
+            }
+        };
+
+        let evaluator = GpuDiodeEvaluator::new(ctx).unwrap();
+        let params = GpuDiodeParams::default();
+
+        println!("\nGPU Diode Evaluation Scaling:");
+        println!("{:>12} {:>12} {:>12}", "Count", "Time", "M evals/sec");
+        println!("{:-<40}", "");
+
+        for &count in &[10_000, 100_000, 1_000_000, 5_000_000] {
+            let vd: Vec<f32> = (0..count).map(|i| -1.0 + (i as f32 / count as f32) * 2.0).collect();
+
+            // Warm-up run
+            let _ = evaluator.evaluate(&params, &vd);
+
+            // Timed run
+            let (results, elapsed) = evaluator.evaluate_timed(&params, &vd).unwrap();
+            assert_eq!(results.len(), count);
+
+            let rate = count as f64 / elapsed.as_secs_f64() / 1e6;
+            println!("{:>12} {:>12.2?} {:>12.2}", count, elapsed, rate);
+        }
     }
 }
