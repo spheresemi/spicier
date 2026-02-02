@@ -239,8 +239,8 @@ Phased roadmap for building Spicier, a high-performance SPICE circuit simulator 
 - [x] Complex number arithmetic
   - ComplexMna system (complex DMatrix + DVector)
   - Complex linear solver (LU decomposition)
-- [ ] Linearization at DC operating point
-  - Compute small-signal parameters
+- [x] Linearization at DC operating point
+  - Compute small-signal parameters (via `ac_info_at()` method)
 - [x] Small-signal device models
   - Resistor: real conductance stamp
   - Capacitor: jωC admittance stamp
