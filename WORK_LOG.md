@@ -1053,3 +1053,26 @@ Added time-varying waveform support for transient analysis, enabling realistic s
 **Verified behavior:**
 - V(1) shows PULSE waveform: 0V → 5V transition with proper rise/fall times
 - V(2) shows RC response: exponential charging during pulse, exponential discharge after
+
+### Bug Fix: Inductor Companion Model Sign
+
+Fixed sign error in inductor companion model current source stamping. The inductor current source was being stamped in the wrong direction, causing instability in circuits with inductors.
+
+**The bug:**
+- `stamp_current_source(node_neg, node_pos, ieq)` was stamping current FROM node_neg TO node_pos
+- But inductor current i_prev flows from node_pos to node_neg
+- This caused unstable simulation behavior (exponential growth instead of oscillation)
+
+**The fix:**
+- Changed to `stamp_current_source(node_pos, node_neg, ieq)` in:
+  - `InductorState::stamp_be()` (Backward Euler)
+  - `InductorState::stamp_trap()` (Trapezoidal)
+  - `InductorState::stamp_trbdf2_bdf2()` (TR-BDF2)
+
+**Verification:**
+- Added `test_lc_oscillation` test that simulates an LC circuit
+- L = 1mH, C = 1µF, expected frequency = 5033 Hz
+- Measured frequency = 5026 Hz (0.13% error)
+- Amplitude preserved over 5 oscillation periods
+
+**Tests:** 256 total passing

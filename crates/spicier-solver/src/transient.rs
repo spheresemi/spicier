@@ -309,23 +309,27 @@ impl InductorState {
     /// Stamp the companion model for Backward Euler.
     ///
     /// L is replaced by: G_eq = h/L in parallel with I_eq = I_prev
+    /// The inductor current flows from node_pos to node_neg.
     pub fn stamp_be(&self, mna: &mut MnaSystem, h: f64) {
         let geq = h / self.inductance;
         let ieq = self.i_prev;
 
         mna.stamp_conductance(self.node_pos, self.node_neg, geq);
-        mna.stamp_current_source(self.node_neg, self.node_pos, ieq);
+        // Current source ieq flows from node_pos to node_neg (same direction as i_prev)
+        mna.stamp_current_source(self.node_pos, self.node_neg, ieq);
     }
 
     /// Stamp the companion model for Trapezoidal rule.
     ///
     /// L is replaced by: G_eq = h/(2L) in parallel with I_eq = I_prev + h/(2L) * V_prev
+    /// The inductor current flows from node_pos to node_neg.
     pub fn stamp_trap(&self, mna: &mut MnaSystem, h: f64) {
         let geq = h / (2.0 * self.inductance);
         let ieq = self.i_prev + geq * self.v_prev;
 
         mna.stamp_conductance(self.node_pos, self.node_neg, geq);
-        mna.stamp_current_source(self.node_neg, self.node_pos, ieq);
+        // Current source ieq flows from node_pos to node_neg (same direction as i_prev)
+        mna.stamp_current_source(self.node_pos, self.node_neg, ieq);
     }
 
     /// Update state after solving a timestep.
@@ -383,7 +387,8 @@ impl InductorState {
         let ieq = a1 * self.i_prev + a2 * self.i_prev_prev;
 
         mna.stamp_conductance(self.node_pos, self.node_neg, geq);
-        mna.stamp_current_source(self.node_neg, self.node_pos, ieq);
+        // Current source ieq flows from node_pos to node_neg (same direction as i_prev)
+        mna.stamp_current_source(self.node_pos, self.node_neg, ieq);
     }
 
     /// Estimate Local Truncation Error for the inductor current.
@@ -1603,6 +1608,121 @@ mod tests {
             "V(cap) at tau = {} (expected ≈ {}) [TR-BDF2]",
             v_at_tau,
             expected_v_tau
+        );
+    }
+
+    /// Simple LC circuit stamper for oscillation test.
+    /// Circuit: Initial voltage on capacitor, connected to inductor.
+    /// Node 0: capacitor top / inductor top
+    /// Ground: capacitor bottom / inductor bottom
+    /// The inductor uses companion model (conductance + current source), not branch current.
+    struct LcOscillatorStamper;
+
+    impl TransientStamper for LcOscillatorStamper {
+        fn stamp_at_time(&self, _mna: &mut MnaSystem, _time: f64) {
+            // No static elements - capacitor and inductor are handled by companion models
+            // The LC circuit has only reactive elements
+        }
+
+        fn num_nodes(&self) -> usize {
+            1 // Just node 0 (top of L and C)
+        }
+
+        fn num_vsources(&self) -> usize {
+            0 // No voltage sources - inductor uses companion model
+        }
+    }
+
+    #[test]
+    fn test_lc_oscillation() {
+        // LC circuit: L = 1mH, C = 1µF
+        // Resonant frequency: f = 1/(2π√(LC)) = 1/(2π√(1e-3 * 1e-6)) = 5033 Hz
+        // Period: T = 1/f ≈ 0.199 ms ≈ 200 µs
+        let inductance = 1e-3; // 1 mH
+        let capacitance = 1e-6; // 1 µF
+
+        let lc_product: f64 = inductance * capacitance;
+        let expected_freq = 1.0 / (2.0 * std::f64::consts::PI * lc_product.sqrt());
+        let expected_period: f64 = 1.0 / expected_freq;
+
+        // Initial conditions: capacitor charged to 5V, zero inductor current
+        // dc_solution: [V(0)] - just node voltage, no branch currents
+        let dc = DVector::from_vec(vec![5.0]);
+
+        // Create state for reactive elements
+        let mut caps = vec![CapacitorState::new(capacitance, Some(0), None)];
+        let mut inds = vec![InductorState::new(inductance, Some(0), None)];
+
+        // Simulate for 5 periods using Trapezoidal (good for oscillators)
+        let params = TransientParams {
+            tstop: 5.0 * expected_period,
+            tstep: expected_period / 50.0, // 50 points per period
+            method: IntegrationMethod::Trapezoidal,
+        };
+
+        let result =
+            solve_transient(&LcOscillatorStamper, &mut caps, &mut inds, &params, &dc).unwrap();
+
+        // Find zero crossings to measure the period
+        let voltages: Vec<f64> = result.points.iter().map(|p| p.solution[0]).collect();
+        let times: Vec<f64> = result.points.iter().map(|p| p.time).collect();
+
+        // Find first zero crossing from positive to negative (after initial positive)
+        let mut zero_crossings = Vec::new();
+        for i in 1..voltages.len() {
+            if voltages[i - 1] > 0.0 && voltages[i] <= 0.0 {
+                // Linear interpolation for more accurate crossing time
+                let t_cross =
+                    times[i - 1] + (0.0 - voltages[i - 1]) * (times[i] - times[i - 1])
+                        / (voltages[i] - voltages[i - 1]);
+                zero_crossings.push(t_cross);
+            }
+        }
+
+        // Need at least 2 zero crossings to measure a full period
+        assert!(
+            zero_crossings.len() >= 2,
+            "Not enough zero crossings found: {}",
+            zero_crossings.len()
+        );
+
+        // Measure period from consecutive positive-to-negative zero crossings
+        // These are separated by exactly one full period
+        let measured_period = zero_crossings[1] - zero_crossings[0];
+        let measured_freq = 1.0 / measured_period;
+
+        // Check frequency is within 5% of expected
+        let freq_error = (measured_freq - expected_freq).abs() / expected_freq;
+        assert!(
+            freq_error < 0.05,
+            "LC oscillation frequency {} Hz differs from expected {} Hz by {:.1}%",
+            measured_freq,
+            expected_freq,
+            freq_error * 100.0
+        );
+
+        // Check that amplitude is preserved (energy conservation)
+        // For ideal LC, max voltage should stay close to initial voltage
+        let max_voltage = voltages.iter().cloned().fold(0.0_f64, f64::max);
+        let min_voltage = voltages.iter().cloned().fold(0.0_f64, f64::min);
+        let amplitude = (max_voltage - min_voltage) / 2.0;
+
+        assert!(
+            (amplitude - 5.0).abs() < 0.5,
+            "LC amplitude {} differs from expected 5.0 (amplitude decay)",
+            amplitude
+        );
+
+        println!(
+            "LC oscillator: expected f={:.1} Hz, measured f={:.1} Hz, error={:.2}%",
+            expected_freq,
+            measured_freq,
+            freq_error * 100.0
+        );
+        println!(
+            "LC oscillator: expected T={:.2} µs, measured T={:.2} µs",
+            expected_period * 1e6,
+            measured_period * 1e6
         );
     }
 }
