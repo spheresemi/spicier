@@ -2,6 +2,7 @@
 name = "spicier-validate"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Cross-simulator validation tool comparing spicier with ngspice"

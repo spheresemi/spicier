@@ -3,6 +3,7 @@ name = "spicier-solver"
 description = "Linear and nonlinear solvers for Spicier"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 keywords = ["spice", "circuit", "solver", "newton-raphson", "gmres"]

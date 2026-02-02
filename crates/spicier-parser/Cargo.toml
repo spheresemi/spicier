@@ -3,6 +3,7 @@ name = "spicier-parser"
 description = "SPICE netlist parser for Spicier"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 keywords = ["spice", "netlist", "parser", "circuit", "eda"]

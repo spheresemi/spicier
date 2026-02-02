@@ -3,6 +3,7 @@ name = "spicier-backend-metal"
 description = "Metal/WebGPU backend for Spicier GPU-accelerated operators"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 keywords = ["spice", "metal", "webgpu", "gpu", "performance"]

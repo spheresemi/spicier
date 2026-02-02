@@ -3,6 +3,7 @@ name = "spicier-core"
 description = "Core circuit representation and MNA matrix structures for Spicier"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 keywords = ["spice", "circuit", "simulator", "electronics", "mna"]

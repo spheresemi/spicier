@@ -3,6 +3,7 @@ name = "spicier-simd"
 description = "SIMD-accelerated kernels for Spicier numerical operations"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 keywords = ["simd", "avx2", "avx512", "numerical", "performance"]

@@ -3,6 +3,7 @@ name = "spicier-cli"
 description = "Command-line interface for Spicier circuit simulator"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 keywords = ["spice", "circuit", "simulator", "cli", "eda"]
