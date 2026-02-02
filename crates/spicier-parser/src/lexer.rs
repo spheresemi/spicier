@@ -25,6 +25,13 @@ pub enum Token {
     Eol,
     /// End of file
     Eof,
+    // Arithmetic operators (for behavioral source expressions)
+    /// Multiply operator
+    Star,
+    /// Divide operator
+    Slash,
+    /// Power operator
+    Caret,
 }
 
 /// A token with its source location.
@@ -153,6 +160,34 @@ impl<'a> Lexer<'a> {
                 self.at_line_start = false;
                 Ok(SpannedToken {
                     token: Token::Value(value),
+                    line,
+                    column,
+                })
+            }
+            // Arithmetic operators for behavioral source expressions
+            Some('*') => {
+                self.advance();
+                self.at_line_start = false;
+                Ok(SpannedToken {
+                    token: Token::Star,
+                    line,
+                    column,
+                })
+            }
+            Some('/') => {
+                self.advance();
+                self.at_line_start = false;
+                Ok(SpannedToken {
+                    token: Token::Slash,
+                    line,
+                    column,
+                })
+            }
+            Some('^') => {
+                self.advance();
+                self.at_line_start = false;
+                Ok(SpannedToken {
+                    token: Token::Caret,
                     line,
                     column,
                 })

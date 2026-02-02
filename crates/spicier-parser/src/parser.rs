@@ -3,7 +3,9 @@
 use std::collections::HashMap;
 
 use spicier_core::{Netlist, NodeId, units::parse_value};
+use spicier_devices::behavioral::{BehavioralCurrentSource, BehavioralVoltageSource};
 use spicier_devices::diode::{Diode, DiodeParams};
+use spicier_devices::expression::parse_expression;
 use spicier_devices::mosfet::{Mosfet, MosfetParams, MosfetType};
 use spicier_devices::passive::{Capacitor, Inductor, Resistor};
 use spicier_devices::sources::{CurrentSource, VoltageSource};
@@ -1132,6 +1134,7 @@ impl<'a> Parser<'a> {
             'G' => self.parse_vccs(name, line),
             'F' => self.parse_cccs(name, line),
             'H' => self.parse_ccvs(name, line),
+            'B' => self.parse_behavioral(name, line),
             'X' => self.parse_subcircuit_instance(name, line),
             _ => {
                 // Unknown element - skip line
@@ -1714,6 +1717,132 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    /// Parse B1 n+ n- V=expr or B1 n+ n- I=expr (behavioral source)
+    fn parse_behavioral(&mut self, name: &str, line: usize) -> Result<()> {
+        self.advance(); // consume name
+
+        let node_pos = self.expect_node(line)?;
+        let node_neg = self.expect_node(line)?;
+
+        // First, check for V= or I= indicator
+        let mut is_voltage = false;
+        let mut is_current = false;
+
+        // Check if next token is V or I followed by =
+        if let Token::Name(n) = self.peek() {
+            let n_upper = n.to_uppercase();
+            if n_upper == "V" || n_upper == "I" {
+                let is_v = n_upper == "V";
+                self.advance();
+                if matches!(self.peek(), Token::Equals) {
+                    self.advance(); // consume =
+                    if is_v {
+                        is_voltage = true;
+                    } else {
+                        is_current = true;
+                    }
+                } else {
+                    // Not followed by =, this shouldn't happen in valid B element
+                    return Err(Error::ParseError {
+                        line,
+                        message: format!(
+                            "Behavioral source '{}' must specify V= or I= expression",
+                            name
+                        ),
+                    });
+                }
+            }
+        }
+
+        if !is_voltage && !is_current {
+            return Err(Error::ParseError {
+                line,
+                message: format!(
+                    "Behavioral source '{}' must specify V= or I= expression",
+                    name
+                ),
+            });
+        }
+
+        // Collect the rest of the line as the expression
+        let mut expr_str = String::new();
+
+        while !matches!(self.peek(), Token::Eol | Token::Eof) {
+            match self.peek() {
+                Token::Name(n) => {
+                    expr_str.push_str(n);
+                    expr_str.push(' ');
+                    self.advance();
+                }
+                Token::Value(v) => {
+                    expr_str.push_str(v);
+                    expr_str.push(' ');
+                    self.advance();
+                }
+                Token::Equals => {
+                    expr_str.push('=');
+                    self.advance();
+                }
+                Token::LParen => {
+                    expr_str.push('(');
+                    self.advance();
+                }
+                Token::RParen => {
+                    expr_str.push(')');
+                    self.advance();
+                }
+                Token::Comma => {
+                    expr_str.push(',');
+                    self.advance();
+                }
+                Token::Star => {
+                    expr_str.push('*');
+                    self.advance();
+                }
+                Token::Slash => {
+                    expr_str.push('/');
+                    self.advance();
+                }
+                Token::Caret => {
+                    expr_str.push('^');
+                    self.advance();
+                }
+                _ => {
+                    self.advance();
+                }
+            }
+        }
+
+        let expr_str = expr_str.trim();
+
+        // Parse the expression
+        let expr = parse_expression(expr_str).map_err(|e| Error::ParseError {
+            line,
+            message: format!("Invalid expression '{}': {}", expr_str, e),
+        })?;
+
+        if is_voltage {
+            let branch_index = self.next_current_index;
+            self.next_current_index += 1;
+            let source = BehavioralVoltageSource::new(name, node_pos, node_neg, branch_index, expr);
+            self.netlist.add_device(source);
+        } else if is_current {
+            let source = BehavioralCurrentSource::new(name, node_pos, node_neg, expr);
+            self.netlist.add_device(source);
+        } else {
+            return Err(Error::ParseError {
+                line,
+                message: format!(
+                    "Behavioral source '{}' must specify V= or I= expression",
+                    name
+                ),
+            });
+        }
+
+        self.skip_to_eol();
+        Ok(())
+    }
+
     fn expect_name(&mut self, line: usize) -> Result<String> {
         match self.peek() {
             Token::Name(n) => {
@@ -2239,6 +2368,46 @@ H1 2 0 V1 100.0
         let netlist = parse(input).unwrap();
         assert_eq!(netlist.num_devices(), 4);
         assert_eq!(netlist.num_current_vars(), 2); // V1 + H1
+    }
+
+    #[test]
+    fn test_parse_behavioral_voltage() {
+        let input = r#"Behavioral Voltage Test
+V1 1 0 10
+R1 2 0 1k
+B1 2 0 V=V(1)*0.5
+.end
+"#;
+
+        let netlist = parse(input).unwrap();
+        assert_eq!(netlist.num_devices(), 3); // V1, R1, B1
+        assert_eq!(netlist.num_current_vars(), 2); // V1 + B1 (voltage source)
+    }
+
+    #[test]
+    fn test_parse_behavioral_current() {
+        let input = r#"Behavioral Current Test
+V1 1 0 10
+R1 1 2 1k
+B1 2 0 I=V(2)/1k
+.end
+"#;
+
+        let netlist = parse(input).unwrap();
+        assert_eq!(netlist.num_devices(), 3); // V1, R1, B1
+        assert_eq!(netlist.num_current_vars(), 1); // V1 only (B1 is current source)
+    }
+
+    #[test]
+    fn test_parse_behavioral_time_varying() {
+        let input = r#"Behavioral Time-Varying Test
+B1 1 0 V=sin(2*pi*1k*time)
+R1 1 0 1k
+.end
+"#;
+
+        let netlist = parse(input).unwrap();
+        assert_eq!(netlist.num_devices(), 2); // B1, R1
     }
 
     #[test]

@@ -1125,3 +1125,83 @@ Implemented hierarchical subcircuit definitions and instance expansion for modul
 - Internal nodes correctly isolated between instances ✓
 
 **Tests:** 264 total passing
+
+### Behavioral Sources (B Elements)
+
+Implemented behavioral sources (B elements) that allow arbitrary mathematical expressions for voltage and current sources.
+
+**New module (`spicier-devices/src/expression.rs`):**
+- `Expr` enum — AST for mathematical expressions
+  - `Constant(f64)` — numeric constant with SI suffix support
+  - `Voltage { node_pos, node_neg }` — voltage reference V(node) or V(n1, n2)
+  - `Current { source_name }` — current reference I(Vsource)
+  - `Time` — simulation time variable
+  - `BinaryOp { op, left, right }` — +, -, *, /, ^
+  - `UnaryOp { op, operand }` — unary minus
+  - `Function { name, args }` — math functions
+- `EvalContext` — evaluation context with voltage/current/time values
+- `parse_expression()` — recursive descent expression parser
+- Expression methods:
+  - `eval(&ctx)` — evaluates expression with given context
+  - `is_nonlinear()` — detects if expression requires Newton-Raphson
+  - `is_time_dependent()` — detects if expression uses `time` variable
+  - `voltage_nodes()` — returns set of voltage nodes referenced
+  - `derivative_voltage(node, &ctx)` — automatic differentiation for Jacobian
+
+**Supported math functions:**
+- Trigonometric: sin, cos, tan, asin, acos, atan
+- Exponential/log: exp, log, log10, sqrt
+- Utility: abs, min, max, if
+- Constants: pi
+
+**Behavioral source devices (`spicier-devices/src/behavioral.rs`):**
+- `BehavioralVoltageSource` — B element with V=expression
+  - Implements Stamp, Element, Stamper traits
+  - `stamp_nonlinear()` evaluates expression at current solution
+  - `stamp_at_time()` evaluates expression at specific time
+  - Adds branch current variable like regular voltage source
+- `BehavioralCurrentSource` — B element with I=expression
+  - Implements Stamp, Element, Stamper traits
+  - `stamp_nonlinear()` includes Jacobian contributions for Newton-Raphson
+  - `stamp_at_time()` evaluates expression at specific time
+  - No branch current variable (like regular current source)
+
+**Lexer extensions (`spicier-parser/src/lexer.rs`):**
+- Added `Star`, `Slash`, `Caret` tokens for expression operators (*, /, ^)
+- Non-comment `*` now lexes as Star token
+
+**Parser support (`spicier-parser/src/parser.rs`):**
+- `parse_behavioral()` — parses B element lines
+- Detects V= or I= at start of expression (not mid-expression V(node) references)
+- Collects expression tokens and delegates to expression parser
+
+**Syntax examples:**
+```spice
+* Voltage-controlled voltage source (2x gain)
+B1 out 0 V=V(in)*2
+
+* Nonlinear resistor (acts like 1k resistor)
+B2 1 2 I=V(1,2)/1k
+
+* Time-varying source
+B3 out 0 V=sin(2*pi*1k*time)
+
+* Quadratic function (nonlinear)
+B4 out 0 V=V(in)*V(in)
+```
+
+**Nonlinearity detection:**
+- `V(node)*constant` — linear (scaling), no NR needed
+- `V(node)*V(node)` — nonlinear (quadratic), NR required
+- `sin(V(node))` — nonlinear (transcendental), NR required
+- `V(node)/constant` — linear (division by constant), no NR needed
+- `time*constant` — linear in time, evaluated per timestep
+
+**Tests:**
+- Expression parsing: constants, operations, functions, precedence
+- Derivative computation for Newton-Raphson
+- Behavioral source stamping (voltage and current)
+- Time-dependent expression evaluation
+- Parser tests for B element syntax
+
+**Tests:** 297 total passing (33 new behavioral/expression tests)
