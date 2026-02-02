@@ -192,7 +192,8 @@ fn run_simulation(input: &PathBuf, cli: &Cli, _backend: &ComputeBackend) -> Resu
                 tstep,
                 tstop,
                 tstart,
-            } => run_transient(&netlist, *tstep, *tstop, *tstart, &initial_conditions, &node_map)?
+                uic,
+            } => run_transient(&netlist, *tstep, *tstop, *tstart, *uic, &initial_conditions, &node_map)?
         }
     }
 
@@ -763,18 +764,23 @@ fn run_transient(
     tstep: f64,
     tstop: f64,
     tstart: f64,
+    uic: bool,
     initial_conditions: &[InitialCondition],
     node_map: &std::collections::HashMap<String, NodeId>,
 ) -> Result<()> {
     println!(
-        "Transient Analysis (.TRAN {} {} {})",
-        tstep, tstop, tstart
+        "Transient Analysis (.TRAN {} {} {}{})",
+        tstep, tstop, tstart, if uic { " UIC" } else { "" }
     );
     println!("==========================================");
     println!();
 
-    // 1. Solve DC operating point for initial conditions
-    let mut dc_solution = if netlist.has_nonlinear_devices() {
+    // 1. Get initial conditions - either from DC operating point or from .IC values (if UIC)
+    let mut dc_solution = if uic {
+        // UIC: Skip DC operating point, start from zero and apply .IC values
+        println!("UIC: Skipping DC operating point calculation.");
+        DVector::zeros(netlist.num_nodes() + netlist.num_current_vars())
+    } else if netlist.has_nonlinear_devices() {
         let stamper = NetlistNonlinearStamper { netlist };
         let criteria = ConvergenceCriteria::default();
         let nr_result = solve_newton_raphson(

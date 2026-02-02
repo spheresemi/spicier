@@ -834,3 +834,26 @@ Added interpolation and resampling methods to transient analysis results, enabli
 - Call `result.sample_at_times(10e-9, None, None)` to get resampled result
 
 **Tests:** 253 total passing (2 new interpolation/sampling tests)
+
+### Phase 6: UIC (Use Initial Conditions) Option
+
+Added UIC option for `.TRAN` command that skips DC operating point calculation and uses `.IC` values directly as initial conditions.
+
+**Parser changes (`spicier-parser/src/parser.rs`):**
+- `AnalysisCommand::Tran` now includes `uic: bool` field
+- `parse_tran_command()` checks for "UIC" keyword after time parameters
+
+**CLI integration (`spicier-cli/src/main.rs`):**
+- `run_transient()` accepts `uic: bool` parameter
+- When `uic=true`: skips DC operating point, starts from zero vector
+- `.IC` values then applied to override specific nodes
+- Prints "UIC: Skipping DC operating point calculation." in output
+
+**New example:**
+- `examples/rc_uic.sp` — RC discharge with UIC (capacitor pre-charged to 5V)
+- `examples/rc_ic_no_uic.sp` — RC with .IC but without UIC (shows DC OP override)
+
+**Use case:**
+- Capacitor pre-charged to specific voltage without DC OP
+- Oscillators and other circuits where DC OP doesn't reflect initial state
+- Faster simulation startup by skipping DC OP when initial conditions known

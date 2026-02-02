@@ -41,11 +41,13 @@ pub enum AnalysisCommand {
         fstart: f64,
         fstop: f64,
     },
-    /// Transient analysis (.TRAN tstep tstop [tstart]).
+    /// Transient analysis (.TRAN tstep tstop [tstart] [tmax] [UIC]).
     Tran {
         tstep: f64,
         tstop: f64,
         tstart: f64,
+        /// Use Initial Conditions - skip DC operating point, use .IC values directly.
+        uic: bool,
     },
 }
 
@@ -305,17 +307,38 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse .TRAN tstep tstop [tstart]
-    fn parse_tran_command(&mut self, line: usize) -> Result<()> {
-        let tstep = self.expect_value(line)?;
-        let tstop = self.expect_value(line)?;
+    fn parse_tran_command(&mut self, _line: usize) -> Result<()> {
+        let tstep = self.try_value().unwrap_or(1e-9);
+        let tstop = self.try_value().unwrap_or(1e-6);
 
-        // Optional tstart
+        // Optional tstart and tmax (we skip tmax)
         let tstart = self.try_value().unwrap_or(0.0);
+        let _tmax = self.try_value(); // tmax is ignored for now
+
+        // Check for UIC keyword
+        let mut uic = false;
+        loop {
+            match self.peek() {
+                Token::Eol | Token::Eof => break,
+                Token::Name(n) => {
+                    if n.to_uppercase() == "UIC" {
+                        uic = true;
+                        self.advance();
+                    } else {
+                        self.advance();
+                    }
+                }
+                _ => {
+                    self.advance();
+                }
+            }
+        }
 
         self.analyses.push(AnalysisCommand::Tran {
             tstep,
             tstop,
             tstart,
+            uic,
         });
 
         self.skip_to_eol();
@@ -1110,10 +1133,12 @@ C1 2 0 1u
                 tstep,
                 tstop,
                 tstart,
+                uic,
             } => {
                 assert!((tstep - 1e-6).abs() < 1e-12);
                 assert!((tstop - 5e-3).abs() < 1e-9);
                 assert!((tstart - 0.0).abs() < 1e-12);
+                assert!(!uic, "UIC should be false by default");
             }
             _ => panic!("Expected TRAN analysis command"),
         }

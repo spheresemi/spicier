@@ -212,7 +212,7 @@ Phased roadmap for building Spicier, a high-performance SPICE circuit simulator 
   - Adaptive step sizing (`solve_transient_adaptive`)
 - [x] Initial conditions (.IC)
   - Node voltage specification (parser + solver integration)
-  - [ ] UIC option
+  - [x] UIC option (skip DC operating point, use .IC directly)
 - [x] Transient simulation (.TRAN)
   - TransientStamper trait for per-step circuit assembly
   - Fixed timestep simulation loop
