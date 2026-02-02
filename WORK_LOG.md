@@ -1632,3 +1632,44 @@ Reorganized WORK_PLAN.md to prioritize GPU optimizations before v0.1.0 release.
    - Comprehensive benchmarks, README updates
 
 **Phase 11 (Release)** now blocked by Phase 9b completion.
+
+### 9b-5: GPU-Side Random Number Generation
+
+Implemented hash-based RNG suitable for GPU parallel execution.
+
+**New module: `spicier-batched-sweep/src/rng.rs`**
+
+**Design:**
+- Stateless hash-based RNG: each random value computed from (seed, sweep_idx, param_idx)
+- No shared state between threads - ideal for GPU parallelism
+- Deterministic/reproducible given same seed
+
+**Algorithm:**
+- **SplitMix64** hash function for mixing
+- **Box-Muller transform** for Gaussian distribution
+- Two uniform values → one Gaussian value
+
+**API:**
+```rust
+// Low-level functions
+uniform(seed, sweep_idx, param_idx) -> f64        // [0, 1)
+gaussian(seed, sweep_idx, param_idx) -> f64       // N(0, 1)
+gaussian_scaled(seed, sweep_idx, param_idx, mean, sigma) -> f64
+
+// Batch generation
+generate_gaussian_parameters(seed, num_sweeps, &means, &sigmas) -> Vec<f64>
+
+// GPU config
+GpuRngConfig::new(seed)
+```
+
+**GPU Shader Code:**
+- `WGSL_RNG_CODE` - Ready-to-include WGSL for Metal/WebGPU
+- `CUDA_RNG_CODE` - Ready-to-include CUDA device code
+
+**Tests:** 10 tests covering:
+- Determinism (same inputs → same outputs)
+- Uniform distribution (chi-squared bucket test)
+- Gaussian statistics (mean ≈ 0, σ ≈ 1)
+- Scaled Gaussian parameters
+- f32 versions for GPU

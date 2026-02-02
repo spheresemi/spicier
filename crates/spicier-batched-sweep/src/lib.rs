@@ -39,6 +39,7 @@
 //! ```
 
 mod error;
+pub mod rng;
 mod solver;
 mod sweep;
 
@@ -63,6 +64,14 @@ pub use solver::{
     MAX_BATCH_SIZE, MIN_BATCH_SIZE, MIN_MATRIX_SIZE,
 };
 pub use sweep::{solve_batched_sweep_auto, solve_batched_sweep_gpu, GpuBatchedSweepResult};
+
+// Re-export key RNG types for convenience
+pub use rng::{
+    gaussian, gaussian_f32, gaussian_scaled, gaussian_scaled_f32,
+    generate_gaussian_parameters, generate_gaussian_parameters_f32,
+    uniform, uniform_f32, GpuRngConfig,
+    CUDA_RNG_CODE, WGSL_RNG_CODE,
+};
 
 #[cfg(feature = "cuda")]
 pub use cuda::CudaBatchedSolver;
