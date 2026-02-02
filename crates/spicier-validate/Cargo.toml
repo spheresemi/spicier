@@ -1,0 +1,43 @@
+[package]
+name = "spicier-validate"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cross-simulator validation tool comparing spicier with ngspice"
+
+[dependencies]
+# Internal crates
+spicier-core.workspace = true
+spicier-parser.workspace = true
+spicier-solver.workspace = true
+spicier-devices.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+
+# Numerical
+num-complex.workspace = true
+nalgebra.workspace = true
+
+# Temp files
+tempfile = "3"
+
+# CLI (optional)
+clap = { workspace = true, optional = true }
+
+[features]
+default = []
+cli = ["clap"]
+
+# Binary will be added when CLI is implemented
+# [[bin]]
+# name = "spicier-validate"
+# required-features = ["cli"]
+
+[dev-dependencies]
+# For integration tests

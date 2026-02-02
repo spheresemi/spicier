@@ -113,7 +113,8 @@ Completed:
 * Batched device evaluation for diodes and MOSFETs (SoA layout, AVX2 kernels)
 * GMRES iterative solver with Jacobi preconditioner for large systems
 * Compute backend abstraction (CPU, CUDA, Metal) with automatic detection
-* 297 tests passing, clippy clean
+* Validation test suite with JSON golden data infrastructure (30 validation tests against analytical solutions and ngspice)
+* 335 tests passing, clippy clean
 * GitHub Actions CI (Linux, macOS, Windows), benchmarking infrastructure
 
 In progress:

@@ -77,11 +77,11 @@ impl MnaSystem {
 
     /// Stamp a conductance between two nodes.
     ///
-    /// For a conductance G between nodes i and j:
-    /// - A[i,i] += G
-    /// - A[j,j] += G
-    /// - A[i,j] -= G
-    /// - A[j,i] -= G
+    /// For a conductance G between nodes i and j, the matrix stamps are:
+    /// - A\[i,i\] += G
+    /// - A\[j,j\] += G
+    /// - A\[i,j\] -= G
+    /// - A\[j,i\] -= G
     ///
     /// Node indices are 0-based (ground is not included in matrix).
     pub fn stamp_conductance(&mut self, node_i: Option<usize>, node_j: Option<usize>, g: f64) {

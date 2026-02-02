@@ -1395,3 +1395,33 @@ Added JSON-based golden data infrastructure for systematic validation against pr
 - `serde` and `serde_json` as dev-dependencies for spicier-parser
 
 **Test count:** 328 total tests passing (30 validation tests)
+
+### Phase 11: Documentation Improvements
+
+Added rustdoc examples and comprehensive module-level documentation to core crates.
+
+**spicier-core documentation:**
+- Expanded lib.rs with module overview and key abstractions
+- Added MNA system example showing voltage divider circuit stamping
+- Added NodeId example demonstrating ground vs non-ground nodes
+- Fixed bracket escaping in mna.rs doc comments
+
+**spicier-solver documentation:**
+- Added comprehensive lib.rs with analysis type overview
+- Added DC operating point example with voltage divider
+- Added AC small-signal example with RC lowpass filter
+- Added transient analysis example with RC charging
+- Documented solver selection (LU vs GMRES) and convergence aids
+
+**spicier-validate crate (in progress):**
+- Created lib.rs with module structure
+- Added error types for validation operations
+- Added ngspice rawfile parser (ASCII and binary formats)
+- Added types for DC, AC, and transient ngspice results
+- Commented out incomplete spicier runner module
+
+**README updates:**
+- Updated test count to 335
+- Added mention of validation test suite with golden data
+
+**Test count:** 335 total tests passing (30 validation tests, 5 new doc tests)

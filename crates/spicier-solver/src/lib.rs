@@ -1,11 +1,120 @@
 //! Linear and nonlinear solvers for Spicier.
 //!
-//! This crate provides:
-//! - Linear system solvers (dense and sparse, real and complex)
-//! - DC operating point analysis
-//! - AC small-signal frequency-domain analysis
-//! - Transient time-domain analysis
-//! - Newton-Raphson iteration for nonlinear circuits
+//! This crate provides simulation engines for circuit analysis:
+//!
+//! - **DC Analysis** - Operating point and parameter sweeps
+//! - **AC Analysis** - Small-signal frequency response
+//! - **Transient Analysis** - Time-domain simulation
+//! - **Newton-Raphson** - Nonlinear circuit convergence
+//!
+//! # Analysis Types
+//!
+//! ## DC Operating Point
+//!
+//! Find the steady-state (DC) solution for a circuit:
+//!
+//! ```rust
+//! use spicier_core::mna::MnaSystem;
+//! use spicier_solver::solve_dc;
+//!
+//! // Create MNA system for voltage divider
+//! let mut mna = MnaSystem::new(2, 1);
+//! mna.stamp_voltage_source(Some(0), None, 0, 10.0);  // V1 = 10V
+//! mna.stamp_conductance(Some(0), Some(1), 1e-3);      // R1 = 1kΩ
+//! mna.stamp_conductance(Some(1), None, 1e-3);         // R2 = 1kΩ
+//!
+//! let solution = solve_dc(&mna).expect("solve failed");
+//! let v1 = solution.voltage(spicier_core::NodeId::new(1));
+//! let v2 = solution.voltage(spicier_core::NodeId::new(2));
+//! assert!((v1 - 10.0).abs() < 1e-9);
+//! assert!((v2 - 5.0).abs() < 1e-9);  // Voltage divider: 10V / 2
+//! ```
+//!
+//! ## AC Small-Signal Analysis
+//!
+//! Compute frequency response using the [`AcStamper`] trait:
+//!
+//! ```rust
+//! use num_complex::Complex;
+//! use spicier_solver::{AcParams, AcStamper, AcSweepType, ComplexMna, solve_ac};
+//!
+//! struct RcLowpass;
+//!
+//! impl AcStamper for RcLowpass {
+//!     fn stamp_ac(&self, mna: &mut ComplexMna, omega: f64) {
+//!         // V1 = 1V AC source at node 0
+//!         mna.stamp_voltage_source(Some(0), None, 0, Complex::new(1.0, 0.0));
+//!         // R = 1kΩ from node 0 to node 1
+//!         mna.stamp_conductance(Some(0), Some(1), 1e-3);
+//!         // C = 159nF from node 1 to ground (f_c ≈ 1kHz)
+//!         let yc = Complex::new(0.0, omega * 159e-9);
+//!         mna.stamp_admittance(Some(1), None, yc);
+//!     }
+//!     fn num_nodes(&self) -> usize { 2 }
+//!     fn num_vsources(&self) -> usize { 1 }
+//! }
+//!
+//! let params = AcParams {
+//!     sweep_type: AcSweepType::Decade,
+//!     num_points: 10,
+//!     fstart: 100.0,
+//!     fstop: 10000.0,
+//! };
+//!
+//! let result = solve_ac(&RcLowpass, &params).expect("AC solve failed");
+//! let mag_db = result.magnitude_db(1);  // Get magnitude in dB at node 1
+//! ```
+//!
+//! ## Transient Analysis
+//!
+//! Time-domain simulation with capacitors and inductors:
+//!
+//! ```rust
+//! use nalgebra::DVector;
+//! use spicier_core::mna::MnaSystem;
+//! use spicier_solver::{
+//!     TransientParams, TransientStamper, CapacitorState,
+//!     IntegrationMethod, solve_transient,
+//! };
+//!
+//! struct RcCircuit;
+//!
+//! impl TransientStamper for RcCircuit {
+//!     fn stamp_at_time(&self, mna: &mut MnaSystem, _time: f64) {
+//!         mna.stamp_voltage_source(Some(0), None, 0, 5.0);  // V1 = 5V
+//!         mna.stamp_conductance(Some(0), Some(1), 1e-3);     // R = 1kΩ
+//!     }
+//!     fn num_nodes(&self) -> usize { 2 }
+//!     fn num_vsources(&self) -> usize { 1 }
+//! }
+//!
+//! let dc = DVector::from_vec(vec![5.0, 0.0]);  // Initial condition
+//! let mut caps = vec![CapacitorState::new(1e-6, Some(1), None)];  // C = 1µF
+//!
+//! let params = TransientParams {
+//!     tstop: 5e-3,  // 5ms
+//!     tstep: 1e-4,  // 100µs
+//!     method: IntegrationMethod::Trapezoidal,
+//! };
+//!
+//! let result = solve_transient(&RcCircuit, &mut caps, &mut vec![], &params, &dc)
+//!     .expect("transient solve failed");
+//! ```
+//!
+//! # Solver Selection
+//!
+//! The crate automatically selects between:
+//! - **Dense LU** - For small circuits (< 100 nodes)
+//! - **Sparse LU** - For medium circuits (100-10000 nodes)
+//! - **GMRES** - For large circuits (> 10000 nodes)
+//!
+//! Use [`DispatchConfig`] to customize solver selection.
+//!
+//! # Convergence Aids
+//!
+//! For difficult nonlinear circuits:
+//! - [`solve_with_source_stepping`] - Gradually ramp sources
+//! - [`solve_with_gmin_stepping`] - Add minimum conductance
 
 pub mod ac;
 pub mod backend;

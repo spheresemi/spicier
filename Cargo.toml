@@ -10,6 +10,7 @@ members = [
     "crates/spicier-backend-cuda",
     "crates/spicier-backend-metal",
     "crates/spicier-cli",
+    "crates/spicier-validate",
 ]
 
 [workspace.package]
