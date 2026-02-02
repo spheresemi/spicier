@@ -973,6 +973,22 @@ Implemented `.PRINT TRAN` output filtering so transient analysis respects the sp
 - `print_test_tran.sp` - RC circuit with `.PRINT TRAN V(2)` showing filtered output
 - `rc_charging_uic.sp` - RC charging with UIC demonstrating exponential rise
 
+### AC .PRINT Output Filtering
+
+Implemented `.PRINT AC` output filtering so AC analysis respects the specified output variables.
+
+- Added `get_ac_print_nodes()` function that handles AC-specific output types:
+  - `V(node)` - Voltage (prints VM and VP)
+  - `VM(node)` - Voltage magnitude in dB
+  - `VP(node)` - Voltage phase in degrees
+  - `VDB(node)` - Voltage dB (same as VM)
+  - `VR(node)` - Voltage real part
+  - `VI(node)` - Voltage imaginary part
+- Deduplicates nodes when same node appears in multiple print vars
+- Only specified nodes appear in AC output when `.PRINT AC` is present
+
+**New examples:** `print_test_ac.sp` - RC lowpass filter with `.PRINT AC VM(2) VP(2)`
+
 ### README Update
 
 Updated README.md to reflect current project status:
