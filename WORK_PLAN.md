@@ -867,18 +867,113 @@ If f32 precision causes convergence failures in batched solves:
 
 This is a fallback, not the primary approach. Most circuits solve fine in f32.
 
-### 9c: Batched Device Evaluation
+### 9c: GPU-Native Massively Parallel Sweeps ⬅️ ACTIVE
 
-A circuit with 100k MOSFETs evaluates I-V + derivatives at every NR iteration. Each device is independent — ideal for GPU data-parallel compute.
+**Vision:** Run 1000s of sweep points entirely on GPU with minimal CPU involvement. Target: 10k+ sweep points solving in parallel, GB-scale working sets.
 
-- [ ] Device evaluation kernels
-  - Per-device-type GPU kernels (diode, MOSFET, etc.)
-  - Uniform computation within a type, minimal branching
-  - Evaluate I, dI/dV, and companion model values in one pass
-- [ ] Cross-sweep batched NR
-  - NR iterations per sweep point in parallel
-  - Converged points retire early, active points continue
-  - Shared Jacobian structure across sweep points
+**Architecture - No CPU Round-Trips:**
+```
+CPU: upload circuit topology + sweep parameters (once)
+GPU: for each NR iteration:
+     → evaluate ALL devices (10k MOSFETs × 1k sweeps = 10M parallel ops)
+     → assemble ALL matrices (parallel stamping with atomics)
+     → solve ALL systems (batched iterative solver)
+     → check convergence (parallel reduction)
+CPU: download final statistics (once)
+```
+
+#### 9c-1: GPU Device Evaluation Kernels ⬅️ START HERE
+
+The clear GPU win - device evaluation is embarrassingly parallel.
+
+- [ ] MOSFET kernel (WGSL + CUDA)
+  - Input: Vgs, Vds, Vbs for each device × each sweep point
+  - Output: Id, gm, gds, gmb (currents + derivatives)
+  - Region detection (cutoff/linear/saturation) without branching
+  - ~10 FLOPs per device, bandwidth-bound
+- [ ] Diode kernel
+  - Input: Vd for each device × each sweep
+  - Output: Id, gd (current + conductance)
+  - Voltage limiting built into kernel
+- [ ] BJT kernel
+  - Input: Vbe, Vce for each device × each sweep
+  - Output: Ic, Ib, gm, gpi, go
+- [ ] Data layout for coalesced access
+  - Structure-of-Arrays: all Vgs together, all Vds together, etc.
+  - Sweep-major ordering: device[0] for all sweeps, then device[1], etc.
+  - Alignment to 128-byte cache lines
+
+**Benchmark target:** 10M device evaluations in <1ms
+
+#### 9c-2: GPU Matrix Assembly
+
+Parallel stamping into sparse matrices.
+
+- [ ] Sparse matrix format on GPU
+  - CSR with fixed sparsity pattern (computed once on CPU)
+  - Value array per sweep point (n_sweeps × nnz floats)
+  - Index arrays shared across all sweeps
+- [ ] Parallel stamping kernel
+  - Each device stamps to known locations (precomputed on CPU)
+  - Atomic adds for shared nodes (rare in typical circuits)
+  - One kernel launch assembles ALL matrices for ALL sweeps
+- [ ] RHS vector assembly
+  - Current source contributions
+  - Linearized device currents (Ieq terms)
+
+#### 9c-3: GPU Iterative Solver (GMRES)
+
+Batched GMRES is more parallelizable than LU (no pivot dependencies).
+
+- [ ] Batched SpMV kernel
+  - Shared sparsity pattern, different values per sweep
+  - One kernel computes Ax for all sweep points
+- [ ] Batched GMRES implementation
+  - Krylov basis vectors per sweep point
+  - Parallel Arnoldi orthogonalization
+  - Givens rotations for least squares
+- [ ] Preconditioner
+  - ILU(0) computed once from nominal matrix
+  - Shared preconditioner across similar sweep points
+  - Or: Jacobi/block-Jacobi (trivially parallel)
+- [ ] Convergence tracking
+  - Per-sweep residual norms
+  - Early termination mask for converged sweeps
+  - Compact active set or skip via masking
+
+**Target:** Solve 1000× 100-node systems in <10ms
+
+#### 9c-4: GPU-Native Newton-Raphson Loop
+
+Full NR iteration on GPU without CPU involvement.
+
+- [ ] NR iteration kernel orchestration
+  - Device eval → Matrix assembly → Solve → Update → Check convergence
+  - All steps on GPU, only sync for iteration count
+- [ ] Solution update with damping
+  - Line search / damping factor on GPU
+  - Voltage limiting for nonlinear devices
+- [ ] Convergence checking
+  - Parallel max-reduction for voltage/current tolerances
+  - Per-sweep convergence status array
+- [ ] Iteration management
+  - CPU only decides "continue or stop"
+  - Converged sweeps masked out, not removed (simpler)
+
+#### 9c-5: Memory Management for Large Sweeps
+
+Handle GB-scale working sets.
+
+- [ ] Multi-buffer chunking
+  - If 10k sweeps × 100×100 exceeds buffer limits, chunk into batches
+  - Pipeline: process chunk N while uploading chunk N+1
+  - wgpu 256MB limit → ~6k sweeps of 100×100 f32 matrices
+- [ ] Memory pool
+  - Pre-allocate working memory for max expected sweep size
+  - Reuse across multiple sweep runs
+- [ ] Streaming results
+  - Don't store all solutions, compute statistics on-the-fly
+  - Only store solutions for failed/interesting points
 
 ### 9d: Large-Circuit Sparse Solve
 
@@ -888,10 +983,10 @@ For circuits with 50k+ nodes, sparse LU factorization itself is the bottleneck.
   - cuSPARSE / cuSOLVER for large sparse LU
   - Supernodal GPU factorization for dense subblocks
   - Reuse symbolic factorization from Phase 7c across NR iterations
-- [ ] GPU-accelerated matrix assembly
-  - Parallel stamping with atomic adds
-  - All devices stamp concurrently, single kernel launch
-  - Worth it for large circuits; CPU fallback for small ones
+- [ ] Hybrid CPU-GPU approach
+  - Symbolic factorization on CPU (once)
+  - Numeric factorization on GPU (each NR iteration)
+  - Triangular solves on GPU
 
 ### 9e: Post-Processing & Analysis on GPU
 
