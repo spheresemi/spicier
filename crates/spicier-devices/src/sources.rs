@@ -1,5 +1,6 @@
 //! Independent source models: Voltage and Current sources.
 
+use nalgebra::DVector;
 use spicier_core::mna::MnaSystem;
 use spicier_core::netlist::AcDeviceInfo;
 use spicier_core::{Element, NodeId, Stamper};
@@ -96,6 +97,21 @@ impl Stamper for VoltageSource {
             ac_mag: 1.0, // Default AC magnitude
         }
     }
+
+    fn is_source(&self) -> bool {
+        true
+    }
+
+    fn stamp_nonlinear_scaled(
+        &self,
+        mna: &mut MnaSystem,
+        _solution: &DVector<f64>,
+        source_factor: f64,
+    ) {
+        let i = node_to_index(self.node_pos);
+        let j = node_to_index(self.node_neg);
+        mna.stamp_voltage_source(i, j, self.current_index, self.voltage * source_factor);
+    }
 }
 
 /// An independent current source.
@@ -157,6 +173,21 @@ impl Stamper for CurrentSource {
             node_neg: node_to_index(self.node_neg),
             ac_mag: 0.0, // No AC by default
         }
+    }
+
+    fn is_source(&self) -> bool {
+        true
+    }
+
+    fn stamp_nonlinear_scaled(
+        &self,
+        mna: &mut MnaSystem,
+        _solution: &DVector<f64>,
+        source_factor: f64,
+    ) {
+        let i = node_to_index(self.node_pos);
+        let j = node_to_index(self.node_neg);
+        mna.stamp_current_source(i, j, self.current * source_factor);
     }
 }
 

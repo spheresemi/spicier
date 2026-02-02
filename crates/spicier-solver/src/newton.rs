@@ -158,6 +158,166 @@ fn check_convergence(
     true
 }
 
+/// Callback for stamping nonlinear devices with source scaling.
+///
+/// Extends [`NonlinearStamper`] with the ability to scale independent sources
+/// for the source stepping convergence aid.
+pub trait ScaledNonlinearStamper: NonlinearStamper {
+    /// Re-stamp the MNA system with sources scaled by `source_factor`.
+    ///
+    /// `source_factor` ranges from 0.0 to 1.0, where 1.0 means full source values.
+    fn stamp_at_scaled(&self, mna: &mut MnaSystem, solution: &DVector<f64>, source_factor: f64);
+}
+
+/// Parameters for source stepping convergence aid.
+#[derive(Debug, Clone)]
+pub struct SourceSteppingParams {
+    /// Initial source factor (default 0.1).
+    pub initial_factor: f64,
+    /// Factor increment per step (default 0.1).
+    pub factor_step: f64,
+    /// Maximum attempts per source level (default 5).
+    pub max_attempts_per_level: usize,
+    /// Minimum factor step before giving up (default 0.01).
+    pub min_factor_step: f64,
+}
+
+impl Default for SourceSteppingParams {
+    fn default() -> Self {
+        Self {
+            initial_factor: 0.1,
+            factor_step: 0.1,
+            max_attempts_per_level: 5,
+            min_factor_step: 0.01,
+        }
+    }
+}
+
+/// Result of source stepping.
+#[derive(Debug, Clone)]
+pub struct SourceSteppingResult {
+    /// Final solution.
+    pub solution: DVector<f64>,
+    /// Total Newton-Raphson iterations across all source levels.
+    pub total_iterations: usize,
+    /// Number of source stepping levels used.
+    pub num_levels: usize,
+    /// Whether the full solution (source_factor = 1.0) was achieved.
+    pub converged: bool,
+}
+
+/// Solve a nonlinear system using source stepping.
+///
+/// Source stepping is a convergence aid that starts with sources scaled to a
+/// small fraction (e.g., 0.1) and gradually increases to full value (1.0).
+/// Each source level uses the previous solution as an initial guess.
+///
+/// This helps difficult circuits converge by finding an easier operating point
+/// first and tracking the solution as sources are ramped up.
+///
+/// # Arguments
+/// * `num_nodes` - Number of nodes (excluding ground)
+/// * `num_vsources` - Number of voltage sources
+/// * `stamper` - Callback to stamp the system with source scaling
+/// * `criteria` - Convergence criteria for each Newton-Raphson solve
+/// * `params` - Source stepping parameters
+pub fn solve_with_source_stepping(
+    num_nodes: usize,
+    num_vsources: usize,
+    stamper: &dyn ScaledNonlinearStamper,
+    criteria: &ConvergenceCriteria,
+    params: &SourceSteppingParams,
+) -> Result<SourceSteppingResult> {
+    let size = num_nodes + num_vsources;
+    let mut solution = DVector::zeros(size);
+    let mut total_iterations = 0;
+    let mut num_levels = 0;
+    let mut source_factor = params.initial_factor;
+    let mut factor_step = params.factor_step;
+
+    // Create a wrapper stamper for each source level
+    struct LevelStamper<'a> {
+        inner: &'a dyn ScaledNonlinearStamper,
+        factor: f64,
+    }
+
+    impl NonlinearStamper for LevelStamper<'_> {
+        fn stamp_at(&self, mna: &mut MnaSystem, solution: &DVector<f64>) {
+            self.inner.stamp_at_scaled(mna, solution, self.factor);
+        }
+    }
+
+    while source_factor <= 1.0 + 1e-9 {
+        // Cap at exactly 1.0
+        let current_factor = source_factor.min(1.0);
+
+        let level_stamper = LevelStamper {
+            inner: stamper,
+            factor: current_factor,
+        };
+
+        // Try to converge at this source level
+        let mut attempts = 0;
+        let mut level_converged = false;
+
+        while attempts < params.max_attempts_per_level && !level_converged {
+            let result = solve_newton_raphson(
+                num_nodes,
+                num_vsources,
+                &level_stamper,
+                criteria,
+                Some(&solution),
+            )?;
+
+            total_iterations += result.iterations;
+
+            if result.converged {
+                solution = result.solution;
+                level_converged = true;
+            } else {
+                attempts += 1;
+            }
+        }
+
+        if !level_converged {
+            // Try reducing step size
+            if factor_step > params.min_factor_step {
+                factor_step /= 2.0;
+                source_factor -= factor_step; // Back up
+                continue;
+            } else {
+                // Give up
+                return Ok(SourceSteppingResult {
+                    solution,
+                    total_iterations,
+                    num_levels,
+                    converged: false,
+                });
+            }
+        }
+
+        num_levels += 1;
+
+        // Move to next source level
+        if (current_factor - 1.0).abs() < 1e-9 {
+            break;
+        }
+
+        source_factor += factor_step;
+        // Gradually increase step size if we're doing well
+        if factor_step < params.factor_step && level_converged {
+            factor_step = (factor_step * 1.5).min(params.factor_step);
+        }
+    }
+
+    Ok(SourceSteppingResult {
+        solution,
+        total_iterations,
+        num_levels,
+        converged: true,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,5 +418,83 @@ mod tests {
         // Large change should not converge
         let new_far = DVector::from_vec(vec![1.1, 2.0, 0.001]);
         assert!(!check_convergence(&old, &new_far, 2, &criteria));
+    }
+
+    /// Scaled version of DiodeCircuitStamper for source stepping tests.
+    struct ScaledDiodeCircuitStamper {
+        v_source: f64,
+        resistance: f64,
+        is: f64,
+        nvt: f64,
+    }
+
+    impl NonlinearStamper for ScaledDiodeCircuitStamper {
+        fn stamp_at(&self, mna: &mut MnaSystem, solution: &DVector<f64>) {
+            // Full source value
+            self.stamp_at_scaled(mna, solution, 1.0);
+        }
+    }
+
+    impl ScaledNonlinearStamper for ScaledDiodeCircuitStamper {
+        fn stamp_at_scaled(
+            &self,
+            mna: &mut MnaSystem,
+            solution: &DVector<f64>,
+            source_factor: f64,
+        ) {
+            // Stamp voltage source with scaled value
+            mna.stamp_voltage_source(Some(0), None, 0, self.v_source * source_factor);
+
+            // Stamp resistor (unchanged by source stepping)
+            let g = 1.0 / self.resistance;
+            mna.stamp_conductance(Some(0), Some(1), g);
+
+            // Stamp diode at node 1 to ground
+            let vd = solution[1];
+            let vd_limited = if vd > 0.8 {
+                0.8 + (vd - 0.8) * 0.1
+            } else {
+                vd
+            };
+            let exp_term = (vd_limited / self.nvt).exp();
+            let id = self.is * (exp_term - 1.0);
+            let gd = (self.is * exp_term / self.nvt).max(1e-12);
+            let ieq = id - gd * vd_limited;
+
+            mna.stamp_conductance(Some(1), None, gd);
+            mna.stamp_current_source(Some(1), None, ieq);
+        }
+    }
+
+    #[test]
+    fn test_source_stepping_diode_circuit() {
+        let stamper = ScaledDiodeCircuitStamper {
+            v_source: 5.0,
+            resistance: 1000.0,
+            is: 1e-14,
+            nvt: 0.02585,
+        };
+
+        let criteria = ConvergenceCriteria::default();
+        let params = SourceSteppingParams::default();
+
+        let result = solve_with_source_stepping(2, 1, &stamper, &criteria, &params)
+            .expect("Source stepping should succeed");
+
+        assert!(result.converged, "Should converge");
+        assert!(
+            result.num_levels > 1,
+            "Should use multiple source levels, used {}",
+            result.num_levels
+        );
+
+        // Final solution should match regular NR result
+        let vd = result.solution[1];
+        assert!(vd > 0.5 && vd < 0.8, "V(diode) = {} (expected 0.5-0.8)", vd);
+
+        println!(
+            "Source stepping converged with {} levels, {} total iterations",
+            result.num_levels, result.total_iterations
+        );
     }
 }

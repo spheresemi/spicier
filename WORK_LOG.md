@@ -762,4 +762,34 @@ Added support for `.IC` commands to specify initial node voltages for transient 
 **New example:**
 - `examples/rc_ic.sp` — RC circuit with `.IC V(2)=2.5`
 
-**Tests:** 248 total passing (4 new parser tests)
+**Tests:** 248 total passing (2 new parser tests)
+
+### Phase 5: Source Stepping Convergence Aid
+
+Added source stepping as a convergence aid for difficult nonlinear circuits. Source stepping gradually ramps independent sources from a small fraction to full value, helping circuits find an operating point when standard Newton-Raphson fails.
+
+**Stamper trait extensions (`spicier-core/src/netlist.rs`):**
+- `is_source(&self) -> bool` — identifies independent sources (V, I)
+- `stamp_nonlinear_scaled(&self, mna, solution, source_factor)` — stamps with scaled source values
+- `Netlist::stamp_nonlinear_into_scaled()` — stamps all devices with source scaling
+
+**Source device updates (`spicier-devices/src/sources.rs`):**
+- `VoltageSource::is_source()` returns true
+- `VoltageSource::stamp_nonlinear_scaled()` scales voltage by source_factor
+- `CurrentSource::is_source()` returns true
+- `CurrentSource::stamp_nonlinear_scaled()` scales current by source_factor
+
+**New solver types (`spicier-solver/src/newton.rs`):**
+- `ScaledNonlinearStamper` trait — extends NonlinearStamper with `stamp_at_scaled()`
+- `SourceSteppingParams` — initial_factor (0.1), factor_step (0.1), max_attempts (5)
+- `SourceSteppingResult` — solution, total_iterations, num_levels, converged
+- `solve_with_source_stepping()` — progressively increases source_factor from initial to 1.0
+
+**Algorithm:**
+1. Start with sources at initial_factor (e.g., 0.1)
+2. Solve at each source level using previous solution as initial guess
+3. If NR fails, reduce step size and retry
+4. Gradually increase to full source value (1.0)
+5. Report total iterations and number of levels used
+
+**Tests:** 250 total passing (1 new source stepping test)

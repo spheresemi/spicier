@@ -34,7 +34,10 @@ pub use dc::{
 };
 pub use error::{Error, Result};
 pub use linear::{CachedSparseLu, CachedSparseLuComplex};
-pub use newton::{ConvergenceCriteria, NonlinearStamper, NrResult, solve_newton_raphson};
+pub use newton::{
+    ConvergenceCriteria, NonlinearStamper, NrResult, ScaledNonlinearStamper,
+    SourceSteppingParams, SourceSteppingResult, solve_newton_raphson, solve_with_source_stepping,
+};
 pub use batched_newton::{
     BatchedNonlinearDevices, LinearStamper, solve_batched_newton_raphson,
 };

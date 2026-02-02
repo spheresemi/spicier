@@ -170,6 +170,30 @@ pub trait Stamper: std::fmt::Debug + Send + Sync {
     fn transient_info(&self) -> TransientDeviceInfo {
         TransientDeviceInfo::None
     }
+
+    /// Whether this device is an independent source (V or I).
+    ///
+    /// Used by source stepping convergence aid to identify which devices
+    /// should be scaled during the stepping process.
+    fn is_source(&self) -> bool {
+        false
+    }
+
+    /// Stamp the device linearized at the current solution with source scaling.
+    ///
+    /// For independent sources (V, I), the source value is multiplied by
+    /// `source_factor` (0.0 to 1.0). For other devices, this is equivalent
+    /// to `stamp_nonlinear`.
+    ///
+    /// Default implementation ignores the source factor.
+    fn stamp_nonlinear_scaled(
+        &self,
+        mna: &mut MnaSystem,
+        solution: &DVector<f64>,
+        _source_factor: f64,
+    ) {
+        self.stamp_nonlinear(mna, solution);
+    }
 }
 
 /// A complete netlist ready for simulation.
@@ -285,6 +309,21 @@ impl Netlist {
     pub fn stamp_nonlinear_into(&self, mna: &mut MnaSystem, solution: &DVector<f64>) {
         for device in &self.devices {
             device.stamp_nonlinear(mna, solution);
+        }
+    }
+
+    /// Stamp all devices with source scaling for source stepping.
+    ///
+    /// Independent sources (V, I) have their values multiplied by `source_factor`.
+    /// This is used by the source stepping convergence aid.
+    pub fn stamp_nonlinear_into_scaled(
+        &self,
+        mna: &mut MnaSystem,
+        solution: &DVector<f64>,
+        source_factor: f64,
+    ) {
+        for device in &self.devices {
+            device.stamp_nonlinear_scaled(mna, solution, source_factor);
         }
     }
 }
