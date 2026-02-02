@@ -3,8 +3,10 @@ name = "spicier-batched-sweep"
 description = "Unified GPU-accelerated batched sweep solving for CUDA and Metal backends"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
 keywords = ["spice", "gpu", "cuda", "metal", "sweep"]
 categories = ["mathematics", "science"]
 
@@ -22,3 +24,10 @@ thiserror.workspace = true
 # Optional backend dependencies
 spicier-backend-cuda = { workspace = true, optional = true }
 spicier-backend-metal = { workspace = true, optional = true }
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "sweep_benchmark"
+harness = false

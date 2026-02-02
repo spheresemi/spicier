@@ -660,11 +660,12 @@ Level 4 (depends on Level 3):
   cargo publish -p spicier-backend-metal  # → solver
 
 Level 5 (depends on Level 4):
-  cargo publish -p spicier-cli        # → core, solver, devices, parser
-  cargo publish -p spicier-validate   # → core, parser, solver, devices
+  cargo publish -p spicier-batched-sweep  # → solver, backend-cuda (opt), backend-metal (opt)
+  cargo publish -p spicier-cli            # → core, solver, devices, parser
+  cargo publish -p spicier-validate       # → core, parser, solver, devices
 
 Level 6 (umbrella crate - last):
-  cargo publish -p spicier            # → all of the above
+  cargo publish -p spicier                # → all of the above
 ```
 
 **Note:** After publishing each crate, wait for crates.io index to update before publishing dependents (~1-2 minutes).
