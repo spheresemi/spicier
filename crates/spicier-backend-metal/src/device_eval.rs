@@ -805,6 +805,8 @@ impl Default for GpuBjtParams {
 }
 
 /// Results from BJT evaluation.
+/// Note: WGSL struct alignment requires padding to match shader layout.
+/// The shader uses vec3 which has 16-byte alignment requirements.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
 pub struct BjtEvalResult {
@@ -818,8 +820,8 @@ pub struct BjtEvalResult {
     pub gpi: f32,
     /// Output conductance dIc/dVce (S).
     pub go: f32,
-    /// Padding for alignment.
-    pub _pad: [f32; 3],
+    /// Padding to match WGSL vec3 alignment (total: 48 bytes).
+    pub _pad: [f32; 7],
 }
 
 /// GPU kernel for batched BJT evaluation.
@@ -1091,7 +1093,13 @@ struct BjtResult {
     gm: f32,
     gpi: f32,
     go: f32,
-    _pad: vec3<f32>,
+    _pad0: f32,
+    _pad1: f32,
+    _pad2: f32,
+    _pad3: f32,
+    _pad4: f32,
+    _pad5: f32,
+    _pad6: f32,
 }
 
 @group(0) @binding(0) var<uniform> params: BjtParams;
@@ -1172,7 +1180,7 @@ fn eval_bjt(@builtin(global_invocation_id) gid: vec3<u32>) {
         max(gm, 1e-12),
         max(gpi, 1e-12),
         go,
-        vec3<f32>(0.0, 0.0, 0.0)
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     );
 }
 "#;
@@ -1526,8 +1534,8 @@ mod tests {
         println!("{:>12} {:>12} {:>12}", "Count", "Time", "M evals/sec");
         println!("{:-<40}", "");
 
-        // BJT result is larger (32 bytes) so stay under buffer limits
-        for &count in &[10_000, 100_000, 1_000_000, 4_000_000] {
+        // BJT result is larger (48 bytes) so stay under buffer limits (128MB / 48 = ~2.6M)
+        for &count in &[10_000, 100_000, 1_000_000, 2_500_000] {
             let vbe: Vec<f32> = (0..count).map(|i| 0.5 + (i as f32 / count as f32) * 0.3).collect();
             let vce: Vec<f32> = (0..count).map(|i| 1.0 + (i as f32 / count as f32) * 4.0).collect();
 
