@@ -107,11 +107,13 @@ pub enum TransientDeviceInfo {
         node_neg: Option<usize>,
         capacitance: f64,
     },
-    /// Inductor with node indices and inductance.
+    /// Inductor with node indices, inductance, and branch current index.
     Inductor {
         node_pos: Option<usize>,
         node_neg: Option<usize>,
         inductance: f64,
+        /// Branch current index in DC solution (for extracting initial current).
+        branch_index: usize,
     },
     /// Not a reactive device.
     None,

@@ -353,8 +353,9 @@ pub fn build_transient_state(
                 node_pos,
                 node_neg,
                 inductance,
+                branch_index,
             } => {
-                inds.push(InductorState::new(inductance, node_pos, node_neg));
+                inds.push(InductorState::new(inductance, node_pos, node_neg, branch_index));
             }
             TransientDeviceInfo::None | _ => {}
         }

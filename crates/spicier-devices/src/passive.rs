@@ -247,6 +247,7 @@ impl Stamper for Inductor {
             node_pos: node_to_index(self.node_pos),
             node_neg: node_to_index(self.node_neg),
             inductance: self.inductance,
+            branch_index: self.current_index,
         }
     }
 }
