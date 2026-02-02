@@ -16,6 +16,7 @@ use spicier_solver::ac::{
     AcParams, AcResult, AcSweepType as SolverAcSweepType, ComplexMna, solve_ac,
 };
 use spicier_solver::dc::{DcSolution, solve_dc};
+use spicier_solver::newton::{ConvergenceCriteria, NonlinearStamper, solve_newton_raphson};
 use spicier_solver::transient::{
     CapacitorState, InductorState, IntegrationMethod, TransientParams, TransientResult,
     TransientStamper, solve_transient,
@@ -232,18 +233,71 @@ pub fn run_spicier(netlist: &str) -> Result<SpicierResult> {
     }
 }
 
+/// Stamper for Newton-Raphson iteration in DC analysis.
+struct DcNonlinearStamper<'a> {
+    netlist: &'a spicier_core::Netlist,
+}
+
+impl NonlinearStamper for DcNonlinearStamper<'_> {
+    fn stamp_at(&self, mna: &mut MnaSystem, solution: &DVector<f64>) {
+        // Clear MNA (handled by newton.rs)
+        // Stamp linear devices first
+        for device in self.netlist.devices() {
+            if !device.is_nonlinear() {
+                device.stamp(mna);
+            }
+        }
+        // Stamp nonlinear devices at current operating point
+        for device in self.netlist.devices() {
+            if device.is_nonlinear() {
+                device.stamp_nonlinear(mna, solution);
+            }
+        }
+    }
+}
+
 /// Run DC operating point analysis.
 fn run_dc_op(parse_result: &ParseResult) -> Result<SpicierResult> {
     let netlist = &parse_result.netlist;
 
-    // Build MNA system
-    let mut mna = MnaSystem::new(netlist.num_nodes(), netlist.num_current_vars());
+    let solution = if netlist.has_nonlinear_devices() {
+        // Use Newton-Raphson for nonlinear circuits
+        let stamper = DcNonlinearStamper { netlist };
+        let criteria = ConvergenceCriteria::default();
+        let nr_result = solve_newton_raphson(
+            netlist.num_nodes(),
+            netlist.num_current_vars(),
+            &stamper,
+            &criteria,
+            None,
+        )?;
 
-    // Stamp all devices
-    netlist.stamp_into(&mut mna);
+        if !nr_result.converged {
+            eprintln!(
+                "Warning: Newton-Raphson did not converge after {} iterations",
+                nr_result.iterations
+            );
+        }
 
-    // Solve
-    let solution = solve_dc(&mna)?;
+        let num_nodes = netlist.num_nodes();
+        let num_vsources = netlist.num_current_vars();
+        DcSolution {
+            node_voltages: DVector::from_iterator(
+                num_nodes,
+                nr_result.solution.iter().take(num_nodes).copied(),
+            ),
+            branch_currents: DVector::from_iterator(
+                num_vsources,
+                nr_result.solution.iter().skip(num_nodes).copied(),
+            ),
+            num_nodes,
+        }
+    } else {
+        // Use direct linear solve for linear circuits
+        let mut mna = MnaSystem::new(netlist.num_nodes(), netlist.num_current_vars());
+        netlist.stamp_into(&mut mna);
+        solve_dc(&mna)?
+    };
 
     // Build voltage source index map
     let mut vsource_indices = HashMap::new();
@@ -555,8 +609,9 @@ fn build_transient_state(
                 node_pos,
                 node_neg,
                 inductance,
+                branch_index,
             } => {
-                inds.push(InductorState::new(inductance, node_pos, node_neg));
+                inds.push(InductorState::new(inductance, node_pos, node_neg, branch_index));
             }
             TransientDeviceInfo::None | _ => {}
         }

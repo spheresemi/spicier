@@ -253,13 +253,11 @@ fn test_tran_rl_step() {
 // ============================================================================
 
 #[test]
-#[ignore = "requires ngspice - known issue: diode model differences"]
+#[ignore = "requires ngspice"]
 fn test_dc_diode_iv() {
-    // KNOWN ISSUE: Spicier's diode model shows different behavior than ngspice.
-    // With V1=0.7V, R1=100Ω:
-    //   ngspice: V(2)=0.641V → diode conducting, I_D ≈ 0.6mA
-    //   spicier: V(2)=0.7V → diode not conducting properly
-    // TODO: Investigate diode Newton-Raphson convergence and model parameters
+    // Diode forward bias with current limiting resistor
+    // With V1=0.7V, R1=100Ω, IS=1e-14, N=1:
+    //   Expected V(2) ≈ 0.641V (diode forward voltage)
     if !ngspice_available() {
         return;
     }
@@ -268,27 +266,20 @@ fn test_dc_diode_iv() {
 
     let mut config = ComparisonConfig::default();
     config.variables = Some(vec!["v(1)".to_string(), "v(2)".to_string()]);
-    config.dc.voltage_rel = 0.10; // 10% tolerance (still fails at 9.15%)
+    config.dc.voltage_rel = 1e-4; // Very tight tolerance (actual error ~0.00%)
 
     let report = compare_simulators(netlist, &config).unwrap();
 
     println!("DC Diode Report:\n{}", report.to_text());
-    // Document the known discrepancy
-    if !report.passed {
-        println!("KNOWN ISSUE: Diode model shows ~9% voltage difference vs ngspice");
-        println!("This suggests spicier's diode isn't conducting properly in this circuit");
-    }
+    assert!(report.passed, "Diode I-V DC operating point should match ngspice");
 }
 
 #[test]
-#[ignore = "requires ngspice - known issue: MOSFET model differences"]
+#[ignore = "requires ngspice"]
 fn test_dc_nmos_common_source() {
-    // KNOWN ISSUE: Spicier's MOSFET model shows different drain current than ngspice.
-    // With Vdd=5V, Vg=2V, Vto=0.7V, KP=100µ:
-    //   ngspice: V(3)=4.155V → I_D = 0.845mA (MOSFET conducting)
-    //   spicier: V(3)=5.0V → I_D ≈ 0mA (MOSFET appears off)
-    // The MOSFET should be on (Vgs=2V > Vto=0.7V) but isn't conducting.
-    // TODO: Investigate MOSFET Level 1 model parameter handling (W/L parsing)
+    // NMOS common-source amplifier with resistive load
+    // With Vdd=5V, Vg=2V, Vto=0.7V, KP=100µ, W/L=10:
+    //   Expected V(3) ≈ 4.155V (MOSFET in saturation)
     if !ngspice_available() {
         return;
     }
@@ -297,14 +288,10 @@ fn test_dc_nmos_common_source() {
 
     let mut config = ComparisonConfig::default();
     config.variables = Some(vec!["v(1)".to_string(), "v(2)".to_string(), "v(3)".to_string()]);
-    config.dc.voltage_rel = 0.25; // 25% tolerance (still fails at 20%)
+    config.dc.voltage_rel = 0.02; // 2% tolerance (actual error ~0.6%)
 
     let report = compare_simulators(netlist, &config).unwrap();
 
     println!("DC NMOS Report:\n{}", report.to_text());
-    // Document the known discrepancy
-    if !report.passed {
-        println!("KNOWN ISSUE: MOSFET drain voltage differs ~20% vs ngspice");
-        println!("This suggests spicier's MOSFET isn't conducting when it should be");
-    }
+    assert!(report.passed, "NMOS common-source DC operating point should match ngspice");
 }
