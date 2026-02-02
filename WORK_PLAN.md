@@ -207,12 +207,12 @@ Phased roadmap for building Spicier, a high-performance SPICE circuit simulator 
 - [x] Companion models
   - Capacitor: Geq + Ieq (BE and Trap)
   - Inductor: Geq + Ieq (BE and Trap)
-- [ ] Timestep control
+- [x] Timestep control
   - Local Truncation Error (LTE) estimation
-  - Adaptive step sizing
-- [ ] Initial conditions (.IC)
-  - Node voltage specification
-  - UIC option
+  - Adaptive step sizing (`solve_transient_adaptive`)
+- [x] Initial conditions (.IC)
+  - Node voltage specification (parser + solver integration)
+  - [ ] UIC option
 - [x] Transient simulation (.TRAN)
   - TransientStamper trait for per-step circuit assembly
   - Fixed timestep simulation loop

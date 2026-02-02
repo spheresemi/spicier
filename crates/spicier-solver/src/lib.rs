@@ -39,8 +39,9 @@ pub use batched_newton::{
     BatchedNonlinearDevices, LinearStamper, solve_batched_newton_raphson,
 };
 pub use transient::{
-    CapacitorState, InductorState, IntegrationMethod, TransientParams, TransientResult,
-    TransientStamper, solve_transient, solve_transient_dispatched,
+    AdaptiveTransientParams, AdaptiveTransientResult, CapacitorState, InductorState,
+    InitialConditions, IntegrationMethod, TransientParams, TransientResult, TransientStamper,
+    solve_transient, solve_transient_adaptive, solve_transient_dispatched,
 };
 pub use backend::ComputeBackend;
 pub use gmres::{

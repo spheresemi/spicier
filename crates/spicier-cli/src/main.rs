@@ -11,12 +11,12 @@ use num_complex::Complex;
 use spicier_core::mna::MnaSystem;
 use spicier_core::netlist::{AcDeviceInfo, TransientDeviceInfo};
 use spicier_core::NodeId;
-use spicier_parser::{AcSweepType, AnalysisCommand, parse_full};
+use spicier_parser::{AcSweepType, AnalysisCommand, InitialCondition, parse_full};
 use spicier_solver::{
     AcParams, AcStamper, AcSweepType as SolverAcSweepType, CapacitorState, ComplexMna,
     ComputeBackend, ConvergenceCriteria, DcSolution, DcSweepParams, DcSweepStamper,
-    InductorState, IntegrationMethod, NonlinearStamper, TransientParams, TransientStamper,
-    solve_ac, solve_dc, solve_dc_sweep, solve_newton_raphson, solve_transient,
+    InductorState, InitialConditions, IntegrationMethod, NonlinearStamper, TransientParams,
+    TransientStamper, solve_ac, solve_dc, solve_dc_sweep, solve_newton_raphson, solve_transient,
 };
 
 #[derive(Parser)]
@@ -137,6 +137,8 @@ fn run_simulation(input: &PathBuf, cli: &Cli, _backend: &ComputeBackend) -> Resu
     let result = parse_full(&content).map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
     let netlist = result.netlist;
     let analyses = result.analyses;
+    let initial_conditions = result.initial_conditions;
+    let node_map = result.node_map;
 
     if cli.verbose {
         println!("Circuit: {}", netlist.title().unwrap_or("(untitled)"));
@@ -190,7 +192,7 @@ fn run_simulation(input: &PathBuf, cli: &Cli, _backend: &ComputeBackend) -> Resu
                 tstep,
                 tstop,
                 tstart,
-            } => run_transient(&netlist, *tstep, *tstop, *tstart)?
+            } => run_transient(&netlist, *tstep, *tstop, *tstart, &initial_conditions, &node_map)?
         }
     }
 
@@ -761,6 +763,8 @@ fn run_transient(
     tstep: f64,
     tstop: f64,
     tstart: f64,
+    initial_conditions: &[InitialCondition],
+    node_map: &std::collections::HashMap<String, NodeId>,
 ) -> Result<()> {
     println!(
         "Transient Analysis (.TRAN {} {} {})",
@@ -770,7 +774,7 @@ fn run_transient(
     println!();
 
     // 1. Solve DC operating point for initial conditions
-    let dc_solution = if netlist.has_nonlinear_devices() {
+    let mut dc_solution = if netlist.has_nonlinear_devices() {
         let stamper = NetlistNonlinearStamper { netlist };
         let criteria = ConvergenceCriteria::default();
         let nr_result = solve_newton_raphson(
@@ -795,6 +799,34 @@ fn run_transient(
         }
         full
     };
+
+    // 1b. Apply .IC initial conditions (override DC solution)
+    if !initial_conditions.is_empty() {
+        // Convert parser's InitialCondition to solver's InitialConditions
+        let mut ic = InitialConditions::new();
+        for parsed_ic in initial_conditions {
+            ic.set_voltage(&parsed_ic.node, parsed_ic.voltage);
+        }
+        // Build MNA index map from node_map
+        // NodeId.as_u32() is the node number (1-based), MNA index is (node_number - 1)
+        let mna_index_map: std::collections::HashMap<String, usize> = node_map
+            .iter()
+            .filter_map(|(name, node_id)| {
+                if node_id.is_ground() {
+                    None
+                } else {
+                    Some((name.clone(), node_id.as_u32() as usize - 1))
+                }
+            })
+            .collect();
+        ic.apply(&mut dc_solution, &mna_index_map);
+
+        println!("Applied initial conditions:");
+        for parsed_ic in initial_conditions {
+            println!("  V({}) = {} V", parsed_ic.node, parsed_ic.voltage);
+        }
+        println!();
+    }
 
     // 2. Build reactive element state vectors
     let (mut caps, mut inds) = build_transient_state(netlist);

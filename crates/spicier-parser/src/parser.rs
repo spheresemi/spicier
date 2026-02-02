@@ -49,6 +49,15 @@ pub enum AnalysisCommand {
     },
 }
 
+/// Initial condition for a node voltage.
+#[derive(Debug, Clone)]
+pub struct InitialCondition {
+    /// Node name (e.g., "1", "out").
+    pub node: String,
+    /// Initial voltage value.
+    pub voltage: f64,
+}
+
 /// Result of parsing a SPICE netlist.
 ///
 /// Contains both the circuit (Netlist) and analysis commands.
@@ -58,6 +67,10 @@ pub struct ParseResult {
     pub netlist: Netlist,
     /// Analysis commands found in the netlist.
     pub analyses: Vec<AnalysisCommand>,
+    /// Initial conditions from .IC commands.
+    pub initial_conditions: Vec<InitialCondition>,
+    /// Node name to NodeId mapping.
+    pub node_map: HashMap<String, NodeId>,
 }
 
 /// Parse a SPICE netlist string into a Netlist.
@@ -91,6 +104,7 @@ struct Parser<'a> {
     pos: usize,
     netlist: Netlist,
     analyses: Vec<AnalysisCommand>,
+    initial_conditions: Vec<InitialCondition>,
     node_map: HashMap<String, NodeId>,
     next_current_index: usize,
     models: HashMap<String, ModelDefinition>,
@@ -109,6 +123,7 @@ impl<'a> Parser<'a> {
             pos: 0,
             netlist: Netlist::new(),
             analyses: Vec::new(),
+            initial_conditions: Vec::new(),
             node_map,
             next_current_index: 0,
             models: HashMap::new(),
@@ -145,6 +160,8 @@ impl<'a> Parser<'a> {
         Ok(ParseResult {
             netlist: self.netlist,
             analyses: self.analyses,
+            initial_conditions: self.initial_conditions,
+            node_map: self.node_map,
         })
     }
 
@@ -199,6 +216,9 @@ impl<'a> Parser<'a> {
             }
             "MODEL" => {
                 self.parse_model_command(line)?;
+            }
+            "IC" => {
+                self.parse_ic_command(line)?;
             }
             _ => {
                 // Unknown command - skip to EOL
@@ -297,6 +317,83 @@ impl<'a> Parser<'a> {
             tstop,
             tstart,
         });
+
+        self.skip_to_eol();
+        Ok(())
+    }
+
+    /// Parse .IC V(node1)=value V(node2)=value ...
+    fn parse_ic_command(&mut self, line: usize) -> Result<()> {
+        // Parse multiple V(node)=value pairs
+        // The lexer tokenizes V(1) as: V, (, 1, )
+        loop {
+            match self.peek() {
+                Token::Eol | Token::Eof => break,
+                Token::Name(name) => {
+                    let name = name.clone();
+                    self.advance();
+
+                    let upper = name.to_uppercase();
+                    if upper == "V" {
+                        // Expect ( node ) = value
+                        if !matches!(self.peek(), Token::LParen) {
+                            return Err(Error::ParseError {
+                                line,
+                                message: "Expected '(' after V in .IC".to_string(),
+                            });
+                        }
+                        self.advance(); // consume (
+
+                        // Get node name
+                        let node = match self.peek() {
+                            Token::Name(n) | Token::Value(n) => {
+                                let n = n.clone();
+                                self.advance();
+                                n
+                            }
+                            _ => {
+                                return Err(Error::ParseError {
+                                    line,
+                                    message: "Expected node name after V( in .IC".to_string(),
+                                });
+                            }
+                        };
+
+                        // Expect )
+                        if !matches!(self.peek(), Token::RParen) {
+                            return Err(Error::ParseError {
+                                line,
+                                message: "Expected ')' after node name in .IC".to_string(),
+                            });
+                        }
+                        self.advance(); // consume )
+
+                        // Expect =
+                        if !matches!(self.peek(), Token::Equals) {
+                            return Err(Error::ParseError {
+                                line,
+                                message: "Expected '=' after V(node) in .IC".to_string(),
+                            });
+                        }
+                        self.advance(); // consume =
+
+                        // Get the value
+                        let voltage = self.expect_value(line)?;
+
+                        self.initial_conditions.push(InitialCondition { node, voltage });
+                    } else {
+                        return Err(Error::ParseError {
+                            line,
+                            message: format!("Expected V(node)=value in .IC, got: {}", name),
+                        });
+                    }
+                }
+                _ => {
+                    // Skip unexpected tokens
+                    self.advance();
+                }
+            }
+        }
 
         self.skip_to_eol();
         Ok(())
@@ -1020,6 +1117,44 @@ C1 2 0 1u
             }
             _ => panic!("Expected TRAN analysis command"),
         }
+    }
+
+    #[test]
+    fn test_parse_ic_command() {
+        let input = r#"IC Test
+V1 1 0 5
+R1 1 2 1k
+C1 2 0 1u
+.IC V(1)=2.5 V(2)=1.0
+.tran 1u 5m
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert_eq!(result.initial_conditions.len(), 2);
+        assert_eq!(result.initial_conditions[0].node, "1");
+        assert!((result.initial_conditions[0].voltage - 2.5).abs() < 1e-12);
+        assert_eq!(result.initial_conditions[1].node, "2");
+        assert!((result.initial_conditions[1].voltage - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_parse_ic_with_named_nodes() {
+        let input = r#"IC Named Nodes
+VIN in 0 5
+R1 in out 1k
+C1 out 0 1u
+.IC V(in)=3.3 V(out)=1.65
+.tran 1u 5m
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert_eq!(result.initial_conditions.len(), 2);
+        assert_eq!(result.initial_conditions[0].node, "in");
+        assert!((result.initial_conditions[0].voltage - 3.3).abs() < 1e-12);
+        assert_eq!(result.initial_conditions[1].node, "out");
+        assert!((result.initial_conditions[1].voltage - 1.65).abs() < 1e-12);
     }
 
     #[test]

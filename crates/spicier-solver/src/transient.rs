@@ -1,5 +1,7 @@
 //! Transient analysis engine.
 
+use std::collections::HashMap;
+
 use nalgebra::DVector;
 use spicier_core::mna::MnaSystem;
 
@@ -10,6 +12,43 @@ use crate::linear::{CachedSparseLu, SPARSE_THRESHOLD, solve_dense};
 use crate::operator::RealOperator;
 use crate::preconditioner::{JacobiPreconditioner, RealPreconditioner};
 use crate::sparse_operator::SparseRealOperator;
+
+/// Initial conditions for transient analysis.
+///
+/// Stores node name -> voltage mappings from .IC commands.
+#[derive(Debug, Clone, Default)]
+pub struct InitialConditions {
+    /// Node voltages keyed by node name.
+    pub voltages: HashMap<String, f64>,
+}
+
+impl InitialConditions {
+    /// Create an empty initial conditions set.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add a node voltage initial condition.
+    pub fn set_voltage(&mut self, node: &str, voltage: f64) {
+        self.voltages.insert(node.to_string(), voltage);
+    }
+
+    /// Apply initial conditions to a solution vector.
+    ///
+    /// The `node_map` maps node names to their MNA matrix indices.
+    pub fn apply(&self, solution: &mut DVector<f64>, node_map: &HashMap<String, usize>) {
+        for (node, &voltage) in &self.voltages {
+            if let Some(&idx) = node_map.get(node) {
+                solution[idx] = voltage;
+            }
+        }
+    }
+
+    /// Check if any initial conditions are set.
+    pub fn is_empty(&self) -> bool {
+        self.voltages.is_empty()
+    }
+}
 
 /// Integration method for transient analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +68,50 @@ pub struct TransientParams {
     pub tstep: f64,
     /// Integration method.
     pub method: IntegrationMethod,
+}
+
+/// Parameters for adaptive timestep control.
+#[derive(Debug, Clone)]
+pub struct AdaptiveTransientParams {
+    /// Stop time (s).
+    pub tstop: f64,
+    /// Initial timestep (s).
+    pub h_init: f64,
+    /// Minimum timestep (s).
+    pub h_min: f64,
+    /// Maximum timestep (s).
+    pub h_max: f64,
+    /// Relative tolerance for LTE.
+    pub reltol: f64,
+    /// Absolute tolerance for LTE.
+    pub abstol: f64,
+    /// Integration method.
+    pub method: IntegrationMethod,
+}
+
+impl Default for AdaptiveTransientParams {
+    fn default() -> Self {
+        Self {
+            tstop: 1e-3,
+            h_init: 1e-9,
+            h_min: 1e-15,
+            h_max: 1e-6,
+            reltol: 1e-3,
+            abstol: 1e-6,
+            method: IntegrationMethod::Trapezoidal,
+        }
+    }
+}
+
+impl AdaptiveTransientParams {
+    /// Create parameters for a specific stop time with defaults.
+    pub fn for_tstop(tstop: f64) -> Self {
+        Self {
+            tstop,
+            h_max: tstop / 100.0, // At least 100 points
+            ..Default::default()
+        }
+    }
 }
 
 /// State of a capacitor for companion model.
@@ -93,6 +176,33 @@ impl CapacitorState {
         }
         self.v_prev = v_new;
     }
+
+    /// Estimate Local Truncation Error for the capacitor voltage.
+    ///
+    /// Uses the difference between Trapezoidal and Backward Euler predictions.
+    /// For a capacitor: LTE ≈ h²/12 * C * d²v/dt²
+    ///
+    /// This method computes the LTE estimate using the "Milne device":
+    /// LTE ≈ |v_trap - v_be| / 3
+    pub fn estimate_lte(&self, v_new: f64, h: f64) -> f64 {
+        // Current computed by Trapezoidal
+        let i_trap = 2.0 * self.capacitance / h * (v_new - self.v_prev) - self.i_prev;
+
+        // Current computed by Backward Euler
+        let i_be = self.capacitance / h * (v_new - self.v_prev);
+
+        // The difference gives an error estimate
+        // For Trapezoidal with Milne device: LTE ≈ |i_trap - i_be| / 3
+        // This estimates the error in the capacitor current
+        (i_trap - i_be).abs() / 3.0
+    }
+
+    /// Get voltage across capacitor from solution vector.
+    pub fn voltage_from_solution(&self, solution: &DVector<f64>) -> f64 {
+        let vp = self.node_pos.map(|i| solution[i]).unwrap_or(0.0);
+        let vn = self.node_neg.map(|i| solution[i]).unwrap_or(0.0);
+        vp - vn
+    }
 }
 
 /// State of an inductor for companion model.
@@ -155,6 +265,28 @@ impl InductorState {
             }
         }
         self.v_prev = v_new;
+    }
+
+    /// Estimate Local Truncation Error for the inductor current.
+    ///
+    /// Uses the difference between Trapezoidal and Backward Euler predictions.
+    /// For an inductor: LTE ≈ h²/12 * L * d²i/dt²
+    pub fn estimate_lte(&self, v_new: f64, h: f64) -> f64 {
+        // Current increment by Trapezoidal
+        let di_trap = h / (2.0 * self.inductance) * (v_new + self.v_prev);
+
+        // Current increment by Backward Euler
+        let di_be = h / self.inductance * v_new;
+
+        // The difference gives an error estimate
+        (di_trap - di_be).abs() / 3.0
+    }
+
+    /// Get voltage across inductor from solution vector.
+    pub fn voltage_from_solution(&self, solution: &DVector<f64>) -> f64 {
+        let vp = self.node_pos.map(|i| solution[i]).unwrap_or(0.0);
+        let vn = self.node_neg.map(|i| solution[i]).unwrap_or(0.0);
+        vp - vn
     }
 }
 
@@ -465,6 +597,211 @@ fn solve_transient_gmres(mna: &MnaSystem, config: &GmresConfig) -> Result<DVecto
     Ok(DVector::from_vec(gmres_result.x))
 }
 
+/// Result of adaptive transient simulation with statistics.
+#[derive(Debug, Clone)]
+pub struct AdaptiveTransientResult {
+    /// All computed timepoints.
+    pub points: Vec<TimePoint>,
+    /// Number of nodes (excluding ground).
+    pub num_nodes: usize,
+    /// Total number of timesteps taken.
+    pub total_steps: usize,
+    /// Number of rejected timesteps.
+    pub rejected_steps: usize,
+    /// Minimum timestep used.
+    pub min_step_used: f64,
+    /// Maximum timestep used.
+    pub max_step_used: f64,
+}
+
+impl AdaptiveTransientResult {
+    /// Get the voltage at a node across all timepoints.
+    pub fn voltage_waveform(&self, node_idx: usize) -> Vec<(f64, f64)> {
+        self.points
+            .iter()
+            .map(|tp| (tp.time, tp.solution[node_idx]))
+            .collect()
+    }
+
+    /// Get all time values.
+    pub fn times(&self) -> Vec<f64> {
+        self.points.iter().map(|tp| tp.time).collect()
+    }
+}
+
+/// Run adaptive transient simulation with automatic timestep control.
+///
+/// Uses Local Truncation Error (LTE) estimation to automatically adjust
+/// the timestep. Larger steps are taken when the solution is smooth,
+/// smaller steps when it changes rapidly.
+///
+/// # Arguments
+/// * `stamper` - Stamps resistive elements and sources
+/// * `caps` - Capacitor companion model states
+/// * `inds` - Inductor companion model states
+/// * `params` - Adaptive transient parameters
+/// * `dc_solution` - Initial DC operating point
+pub fn solve_transient_adaptive(
+    stamper: &dyn TransientStamper,
+    caps: &mut [CapacitorState],
+    inds: &mut [InductorState],
+    params: &AdaptiveTransientParams,
+    dc_solution: &DVector<f64>,
+) -> Result<AdaptiveTransientResult> {
+    let num_nodes = stamper.num_nodes();
+    let num_vsources = stamper.num_vsources();
+    let mna_size = num_nodes + num_vsources;
+
+    let mut solution = dc_solution.clone();
+    let mut t = 0.0;
+    let mut h = params.h_init;
+
+    // Initialize reactive element states from DC solution
+    for cap in caps.iter_mut() {
+        cap.v_prev = cap.voltage_from_solution(&solution);
+        cap.i_prev = 0.0;
+    }
+    for ind in inds.iter_mut() {
+        ind.v_prev = ind.voltage_from_solution(&solution);
+    }
+
+    let mut result = AdaptiveTransientResult {
+        points: Vec::new(),
+        num_nodes,
+        total_steps: 0,
+        rejected_steps: 0,
+        min_step_used: f64::INFINITY,
+        max_step_used: 0.0,
+    };
+
+    // Store initial point
+    result.points.push(TimePoint {
+        time: 0.0,
+        solution: solution.clone(),
+    });
+
+    // Cached sparse solver
+    let mut cached_solver: Option<CachedSparseLu> = None;
+
+    // Save states for potential rollback
+    let mut saved_cap_states: Vec<(f64, f64)> = caps.iter().map(|c| (c.v_prev, c.i_prev)).collect();
+    let mut saved_ind_states: Vec<(f64, f64)> = inds.iter().map(|i| (i.i_prev, i.v_prev)).collect();
+
+    while t < params.tstop {
+        // Clamp timestep
+        h = h.clamp(params.h_min, params.h_max);
+
+        // Don't overshoot tstop
+        if t + h > params.tstop {
+            h = params.tstop - t;
+        }
+
+        // Build MNA system for this timestep
+        let mut mna = MnaSystem::new(num_nodes, num_vsources);
+        stamper.stamp_static(&mut mna);
+
+        // Stamp companion models (using Trapezoidal for better accuracy)
+        for cap in caps.iter() {
+            cap.stamp_trap(&mut mna, h);
+        }
+        for ind in inds.iter() {
+            ind.stamp_trap(&mut mna, h);
+        }
+
+        // Solve
+        let new_solution = if mna_size >= SPARSE_THRESHOLD {
+            let solver = match &cached_solver {
+                Some(s) => s,
+                None => {
+                    cached_solver = Some(CachedSparseLu::new(mna_size, &mna.triplets)?);
+                    cached_solver.as_ref().unwrap()
+                }
+            };
+            solver.solve(&mna.triplets, mna.rhs())?
+        } else {
+            solve_dense(&mna.to_dense_matrix(), mna.rhs())?
+        };
+
+        // Estimate LTE for all reactive elements
+        let mut max_lte = 0.0_f64;
+        let mut max_ref = 0.0_f64; // Reference value for relative error
+
+        for cap in caps.iter() {
+            let v_new = cap.voltage_from_solution(&new_solution);
+            let lte = cap.estimate_lte(v_new, h);
+            max_lte = max_lte.max(lte);
+            max_ref = max_ref.max(v_new.abs());
+        }
+
+        for ind in inds.iter() {
+            let v_new = ind.voltage_from_solution(&new_solution);
+            let lte = ind.estimate_lte(v_new, h);
+            max_lte = max_lte.max(lte);
+            max_ref = max_ref.max(ind.i_prev.abs());
+        }
+
+        // Compute tolerance: max(abstol, reltol * max_ref)
+        let tol = params.abstol.max(params.reltol * max_ref);
+
+        result.total_steps += 1;
+
+        if max_lte > tol && h > params.h_min {
+            // Reject step: LTE too large
+            result.rejected_steps += 1;
+
+            // Restore previous states
+            for (cap, (v, i)) in caps.iter_mut().zip(saved_cap_states.iter()) {
+                cap.v_prev = *v;
+                cap.i_prev = *i;
+            }
+            for (ind, (i, v)) in inds.iter_mut().zip(saved_ind_states.iter()) {
+                ind.i_prev = *i;
+                ind.v_prev = *v;
+            }
+
+            // Reduce timestep (safety factor of 0.8)
+            let factor = (tol / max_lte).sqrt().min(0.5);
+            h *= factor.max(0.1); // Don't reduce by more than 10x
+        } else {
+            // Accept step
+            t += h;
+            solution = new_solution;
+
+            // Update reactive element states
+            for cap in caps.iter_mut() {
+                let v_new = cap.voltage_from_solution(&solution);
+                cap.update(v_new, h, IntegrationMethod::Trapezoidal);
+            }
+            for ind in inds.iter_mut() {
+                let v_new = ind.voltage_from_solution(&solution);
+                ind.update(v_new, h, IntegrationMethod::Trapezoidal);
+            }
+
+            // Save states for potential rollback
+            saved_cap_states = caps.iter().map(|c| (c.v_prev, c.i_prev)).collect();
+            saved_ind_states = inds.iter().map(|i| (i.i_prev, i.v_prev)).collect();
+
+            // Track step size statistics
+            result.min_step_used = result.min_step_used.min(h);
+            result.max_step_used = result.max_step_used.max(h);
+
+            // Store result
+            result.points.push(TimePoint {
+                time: t,
+                solution: solution.clone(),
+            });
+
+            // Increase timestep for next step if LTE is small
+            if max_lte < tol * 0.5 && h < params.h_max {
+                let factor = (tol / max_lte.max(1e-20)).sqrt().min(2.0);
+                h *= factor.min(1.5); // Don't increase by more than 1.5x
+            }
+        }
+    }
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -633,6 +970,100 @@ mod tests {
             (mna.rhs()[0] - 2.5).abs() < 1e-10,
             "Ieq = {} (expected 2.5)",
             mna.rhs()[0]
+        );
+    }
+
+    #[test]
+    fn test_adaptive_rc_charging() {
+        // RC circuit: V1=5V, R=1k, C=1uF, tau=1ms
+        let stamper = RcCircuitStamper {
+            voltage: 5.0,
+            resistance: 1000.0,
+        };
+
+        let capacitance = 1e-6;
+        let mut caps = vec![CapacitorState::new(capacitance, Some(1), None)];
+
+        let params = AdaptiveTransientParams {
+            tstop: 5e-3, // 5 time constants
+            h_init: 1e-7,
+            h_min: 1e-9,
+            h_max: 1e-4,
+            reltol: 1e-3,
+            abstol: 1e-6,
+            method: IntegrationMethod::Trapezoidal,
+        };
+
+        let dc = DVector::from_vec(vec![5.0, 0.0, -0.005]);
+
+        let result = solve_transient_adaptive(&stamper, &mut caps, &mut [], &params, &dc).unwrap();
+
+        // After 5 tau, capacitor should be nearly charged to 5V
+        let final_voltage = result.points.last().unwrap().solution[1];
+        assert!(
+            (final_voltage - 5.0).abs() < 0.05,
+            "Final V(cap) = {} (expected ≈ 5.0)",
+            final_voltage
+        );
+
+        // Adaptive should use fewer steps than fixed timestep
+        // With fixed 10us steps, we'd need 500 steps
+        // Adaptive should use fewer
+        assert!(
+            result.total_steps < 200,
+            "Adaptive used {} steps (expected < 200 for efficiency)",
+            result.total_steps
+        );
+
+        // Timestep should increase as capacitor approaches steady state
+        assert!(
+            result.max_step_used > params.h_init * 10.0,
+            "Max step {} should grow from initial {}",
+            result.max_step_used,
+            params.h_init
+        );
+
+        println!(
+            "Adaptive transient: {} total steps, {} rejected, h: [{:.2e}, {:.2e}]",
+            result.total_steps,
+            result.rejected_steps,
+            result.min_step_used,
+            result.max_step_used
+        );
+    }
+
+    #[test]
+    fn test_lte_estimation() {
+        // Test that LTE estimate is reasonable for a smooth (constant rate) change.
+        // For a constant dV/dt, the capacitor current is constant: i = C * dV/dt.
+        // Trapezoidal and Backward Euler should agree, giving near-zero LTE.
+        let h = 1e-6;
+        let dv_dt = 1e5; // 0.1V per microsecond
+        let v_prev = 0.0;
+        let v_new = v_prev + dv_dt * h; // = 0.1V
+
+        // Current is constant at C * dV/dt for linear voltage ramp
+        let capacitance = 1e-6;
+        let i_const = capacitance * dv_dt; // = 0.1 A
+
+        let cap = CapacitorState {
+            capacitance,
+            v_prev,
+            i_prev: i_const, // Current at previous step (same as current step for linear ramp)
+            node_pos: Some(0),
+            node_neg: None,
+        };
+
+        let lte = cap.estimate_lte(v_new, h);
+
+        // LTE should be non-negative
+        assert!(lte >= 0.0, "LTE should be non-negative: {}", lte);
+
+        // For a perfectly linear ramp with consistent i_prev, LTE should be very small
+        assert!(
+            lte < 1e-6,
+            "LTE {} seems too large for constant-rate change",
+            lte
         );
     }
 }

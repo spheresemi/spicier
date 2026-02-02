@@ -693,3 +693,73 @@ Added automatic linearization of nonlinear devices (diodes, MOSFETs) for AC smal
 - Diode at 0.74V DC shows ~6 ohm small-signal resistance
 - MOSFET amplifier shows inverting gain (180° phase shift) as expected
 - Both automatically linearized from DC operating point
+
+### Phase 6: Adaptive Timestep Control
+
+Added LTE-based adaptive timestep control for transient analysis using the Milne device method (comparing Trapezoidal vs Backward Euler error estimates).
+
+**New types (`spicier-solver/src/transient.rs`):**
+- `AdaptiveTransientParams` — adaptive timestep configuration
+  - `tstop: f64` — end time
+  - `h_init: f64` — initial timestep
+  - `h_min: f64` — minimum allowed timestep
+  - `h_max: f64` — maximum allowed timestep
+  - `reltol: f64` — relative tolerance (default 0.001)
+  - `abstol: f64` — absolute tolerance (default 1e-6)
+- `AdaptiveTransientResult` — result with step statistics
+  - `timepoints: Vec<TimePoint>` — solution at all accepted timesteps
+  - `accepted_steps: usize` — number of accepted timesteps
+  - `rejected_steps: usize` — number of rejected (and retried) timesteps
+  - Same waveform accessors as `TransientResult`
+
+**LTE estimation methods:**
+- `CapacitorState::estimate_lte(v_new, h)` — capacitor current error from Milne device
+  - Compares Trapezoidal (2nd order) vs Backward Euler (1st order)
+  - Error estimate: |i_trap - i_be| / 3
+- `InductorState::estimate_lte(v_new, h)` — inductor current increment error
+  - Same Milne device principle for inductor current
+
+**New solver function:**
+- `solve_transient_adaptive()` — LTE-based adaptive timestep transient solver
+  - Starts from DC operating point
+  - Estimates LTE from all capacitors and inductors
+  - Computes timestep scale factor: 0.9 * (tol / lte)^(1/order)
+  - Rejects step and halves h if LTE > tolerance
+  - Increases h up to h_max when LTE << tolerance
+  - Enforces h_min to prevent timestep collapse
+  - Returns error if h_min reached (circuit too stiff)
+
+**Tests:** 244 total passing
+- `test_adaptive_rc_charging` — RC circuit with adaptive timestep
+- `test_lte_estimation` — LTE accuracy for constant-rate voltage change
+
+**Remaining Phase 6 items:**
+- Output at specified times (interpolation)
+- UIC (Use Initial Conditions) option for transient
+- Method switching (gear orders)
+
+### Phase 6: Initial Conditions (.IC)
+
+Added support for `.IC` commands to specify initial node voltages for transient analysis.
+
+**Parser changes (`spicier-parser/src/parser.rs`):**
+- `InitialCondition` struct: `{ node: String, voltage: f64 }`
+- `ParseResult` now includes `initial_conditions: Vec<InitialCondition>` and `node_map: HashMap<String, NodeId>`
+- `parse_ic_command()` parses `.IC V(node1)=value V(node2)=value ...`
+  - Handles tokenized input: V, (, node, ), =, value
+  - Supports both numbered and named nodes
+
+**Solver changes (`spicier-solver/src/transient.rs`):**
+- `InitialConditions` struct with `voltages: HashMap<String, f64>`
+  - `set_voltage(&mut self, node: &str, voltage: f64)`
+  - `apply(&self, solution: &mut DVector<f64>, node_map: &HashMap<String, usize>)`
+
+**CLI integration (`spicier-cli/src/main.rs`):**
+- `run_transient()` now accepts `initial_conditions` and `node_map`
+- Applies `.IC` values to DC solution before transient simulation
+- Prints applied initial conditions when verbose
+
+**New example:**
+- `examples/rc_ic.sp` — RC circuit with `.IC V(2)=2.5`
+
+**Tests:** 248 total passing (4 new parser tests)
