@@ -1076,3 +1076,52 @@ Fixed sign error in inductor companion model current source stamping. The induct
 - Amplitude preserved over 5 oscillation periods
 
 **Tests:** 256 total passing
+
+### Subcircuit Support (.SUBCKT/.ENDS)
+
+Implemented hierarchical subcircuit definitions and instance expansion for modular netlist organization.
+
+**New data structures (`spicier-parser/src/parser.rs`):**
+- `RawElementLine` — stores unexpanded element lines within subcircuits
+- `SubcircuitDefinition` — name, ports, elements, and nested instances
+- `ParseResult.subcircuits` — HashMap of all subcircuit definitions
+
+**Parsing support:**
+- `.SUBCKT name port1 port2 ...` — starts subcircuit definition
+- `.ENDS [name]` — ends subcircuit definition
+- `Xname node1 node2 ... subckt_name` — subcircuit instance
+- Elements inside subcircuits stored as raw lines for later expansion
+- Nested subcircuit instances tracked separately from regular elements
+
+**Subcircuit expansion:**
+- `expand_subcircuit()` — flattens subcircuit instance into parent netlist
+- `expand_element_line()` — performs node substitution and name prefixing
+- Port nodes map to external connections (e.g., `in` → node `1`)
+- Internal nodes get unique prefixes (e.g., `mid` → `X1_mid`)
+- Element names preserve type prefix (e.g., `R1` → `RX1_1`)
+- Nested subcircuit instances recursively expanded
+
+**Node ID conflict handling:**
+- Fixed node ID collision between named internal nodes and numeric external nodes
+- Connection nodes registered before expansion to claim their IDs first
+- Numeric node names check for existing ID conflicts before assignment
+- Internal nodes assigned IDs that don't conflict with explicit numeric nodes
+
+**Element types supported in subcircuits:**
+- R, C, L (passive elements)
+- V, I (sources)
+- D (diodes)
+- M (MOSFETs)
+- X (nested subcircuit instances)
+
+**Tests:**
+- `test_parse_subcircuit_definition` — basic parsing of .SUBCKT/.ENDS blocks
+- `test_subcircuit_voltage_divider` — simple voltage divider as subcircuit
+- `test_nested_subcircuits` — two-level nesting with inner RES subcircuit
+
+**Verified behavior:**
+- Subcircuit voltage divider: V(out) = 5V from 10V source with equal resistors ✓
+- Nested subcircuits: TWORES (2×RES in series) + R3 gives proper divider ✓
+- Internal nodes correctly isolated between instances ✓
+
+**Tests:** 264 total passing

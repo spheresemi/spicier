@@ -494,3 +494,106 @@ R2 2 0 10k
         expected_v2
     );
 }
+
+// ────────────────────── Subcircuit tests ──────────────────────
+
+/// Test: Simple subcircuit with voltage divider
+#[test]
+fn test_subcircuit_voltage_divider() {
+    let netlist_str = r#"
+Subcircuit Test
+* Define a voltage divider subcircuit
+.SUBCKT VDIV in out
+R1 in out 1k
+R2 out 0 1k
+.ENDS VDIV
+
+* Main circuit
+V1 1 0 DC 10
+X1 1 2 VDIV
+.end
+"#;
+
+    let result = parse_full(netlist_str).expect("parse should succeed");
+
+    // Should have parsed the subcircuit definition
+    assert!(
+        result.subcircuits.contains_key("VDIV"),
+        "VDIV subcircuit should be defined"
+    );
+
+    let subckt = &result.subcircuits["VDIV"];
+    assert_eq!(subckt.ports.len(), 2);
+    assert_eq!(subckt.elements.len(), 2); // R1 and R2
+
+    // The netlist should have the expanded devices
+    // V1, X1.R1, X1.R2
+    assert_eq!(
+        result.netlist.num_devices(),
+        3,
+        "Should have 3 devices (V1, X1.R1, X1.R2)"
+    );
+
+    // Simulate
+    let mna = result.netlist.assemble_mna();
+    let solution = solve_dc(&mna).expect("DC solve should succeed");
+
+    // V(1) = 10V (source node)
+    let v1 = solution.voltage(NodeId::new(1));
+    assert!((v1 - 10.0).abs() < 1e-6, "V(1) = {} (expected 10.0)", v1);
+
+    // V(2) = V(out) = 5V (voltage divider output)
+    let v2 = solution.voltage(NodeId::new(2));
+    assert!((v2 - 5.0).abs() < 1e-6, "V(2) = {} (expected 5.0)", v2);
+}
+
+/// Test: Nested subcircuits
+#[test]
+fn test_nested_subcircuits() {
+    let netlist_str = r#"
+Nested Subcircuit Test
+* Inner subcircuit: single resistor
+.SUBCKT RES a b
+R1 a b 1k
+.ENDS RES
+
+* Outer subcircuit: two resistors in series using inner subcircuit
+.SUBCKT TWORES in out
+X1 in mid RES
+X2 mid out RES
+.ENDS TWORES
+
+* Main circuit: source + two resistor pairs to ground
+V1 1 0 DC 10
+X1 1 2 TWORES
+R3 2 0 2k
+.end
+"#;
+
+    let result = parse_full(netlist_str).expect("parse should succeed");
+
+    // Should have both subcircuit definitions
+    assert!(result.subcircuits.contains_key("RES"));
+    assert!(result.subcircuits.contains_key("TWORES"));
+
+    // The netlist should have expanded all subcircuit instances
+    // V1, X1.X1.R1, X1.X2.R1, R3
+    assert!(
+        result.netlist.num_devices() >= 4,
+        "Should have at least 4 devices, got {}",
+        result.netlist.num_devices()
+    );
+
+    // Simulate
+    let mna = result.netlist.assemble_mna();
+    let solution = solve_dc(&mna).expect("DC solve should succeed");
+
+    // Total resistance: 2k (from TWORES) in series with 2k (R3 parallel path consideration)
+    // V(1) = 10V
+    let v1 = solution.voltage(NodeId::new(1));
+    assert!((v1 - 10.0).abs() < 1e-6, "V(1) = {} (expected 10.0)", v1);
+
+    // V(2) = 10 * 2k / (2k + 2k) = 5V (voltage divider: TWORES 2k on top, R3 2k on bottom)
+    let v2 = solution.voltage(NodeId::new(2));
+    assert!((v2 - 5.0).abs() < 1e-6, "V(2) = {} (expected 5.0)", v2);
+}
