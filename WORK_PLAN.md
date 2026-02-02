@@ -217,7 +217,7 @@ Phased roadmap for building Spicier, a high-performance SPICE circuit simulator 
   - TransientStamper trait for per-step circuit assembly
   - Fixed timestep simulation loop
   - TransientResult with waveform extraction
-  - [ ] Output at specified times (interpolation)
+  - [x] Output at specified times (interpolation via `sample_at_times()`)
 - [x] Transient CLI integration
   - Stamper trait extended with transient_info() returning TransientDeviceInfo
   - NetlistTransientStamper for per-step circuit assembly from Netlist

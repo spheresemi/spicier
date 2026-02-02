@@ -321,6 +321,78 @@ impl TransientResult {
     pub fn times(&self) -> Vec<f64> {
         self.points.iter().map(|tp| tp.time).collect()
     }
+
+    /// Interpolate the solution at a specific time.
+    ///
+    /// Uses linear interpolation between the two nearest timepoints.
+    /// Returns None if time is outside the simulation range.
+    pub fn interpolate_at(&self, time: f64) -> Option<DVector<f64>> {
+        if self.points.is_empty() {
+            return None;
+        }
+
+        // Handle boundary cases
+        if time <= self.points[0].time {
+            return Some(self.points[0].solution.clone());
+        }
+        if time >= self.points.last()?.time {
+            return Some(self.points.last()?.solution.clone());
+        }
+
+        // Find the interval containing time
+        for i in 0..self.points.len() - 1 {
+            let t0 = self.points[i].time;
+            let t1 = self.points[i + 1].time;
+
+            if time >= t0 && time <= t1 {
+                // Linear interpolation
+                let alpha = (time - t0) / (t1 - t0);
+                let v0 = &self.points[i].solution;
+                let v1 = &self.points[i + 1].solution;
+                return Some(v0 * (1.0 - alpha) + v1 * alpha);
+            }
+        }
+
+        None
+    }
+
+    /// Sample the waveform at evenly-spaced times.
+    ///
+    /// Returns a new TransientResult with timepoints at regular intervals.
+    ///
+    /// # Arguments
+    /// * `tstep` - Time step between samples
+    /// * `tstart` - Start time (default 0.0)
+    /// * `tstop` - Stop time (uses simulation end time if None)
+    pub fn sample_at_times(
+        &self,
+        tstep: f64,
+        tstart: Option<f64>,
+        tstop: Option<f64>,
+    ) -> TransientResult {
+        let tstart = tstart.unwrap_or(0.0);
+        let tstop = tstop.unwrap_or_else(|| self.points.last().map(|p| p.time).unwrap_or(0.0));
+
+        let mut sampled_points = Vec::new();
+        let mut t = tstart;
+
+        while t <= tstop + tstep * 0.001 {
+            if let Some(solution) = self.interpolate_at(t) {
+                sampled_points.push(TimePoint { time: t, solution });
+            }
+            t += tstep;
+        }
+
+        TransientResult {
+            points: sampled_points,
+            num_nodes: self.num_nodes,
+        }
+    }
+
+    /// Get the voltage at a node at a specific time (interpolated).
+    pub fn voltage_at(&self, node_idx: usize, time: f64) -> Option<f64> {
+        self.interpolate_at(time).map(|sol| sol[node_idx])
+    }
 }
 
 /// Callback for stamping the circuit at each transient timestep.
@@ -626,6 +698,80 @@ impl AdaptiveTransientResult {
     /// Get all time values.
     pub fn times(&self) -> Vec<f64> {
         self.points.iter().map(|tp| tp.time).collect()
+    }
+
+    /// Interpolate the solution at a specific time.
+    ///
+    /// Uses linear interpolation between the two nearest timepoints.
+    /// Returns None if time is outside the simulation range.
+    pub fn interpolate_at(&self, time: f64) -> Option<DVector<f64>> {
+        if self.points.is_empty() {
+            return None;
+        }
+
+        // Handle boundary cases
+        if time <= self.points[0].time {
+            return Some(self.points[0].solution.clone());
+        }
+        if time >= self.points.last()?.time {
+            return Some(self.points.last()?.solution.clone());
+        }
+
+        // Find the interval containing time
+        for i in 0..self.points.len() - 1 {
+            let t0 = self.points[i].time;
+            let t1 = self.points[i + 1].time;
+
+            if time >= t0 && time <= t1 {
+                // Linear interpolation
+                let alpha = (time - t0) / (t1 - t0);
+                let v0 = &self.points[i].solution;
+                let v1 = &self.points[i + 1].solution;
+                return Some(v0 * (1.0 - alpha) + v1 * alpha);
+            }
+        }
+
+        None
+    }
+
+    /// Sample the waveform at evenly-spaced times.
+    ///
+    /// Returns a new TransientResult with timepoints at regular intervals.
+    /// This is useful for producing output at uniform time steps from an
+    /// adaptive simulation that used variable step sizes.
+    ///
+    /// # Arguments
+    /// * `tstep` - Time step between samples
+    /// * `tstart` - Start time (default 0.0)
+    /// * `tstop` - Stop time (uses simulation end time if None)
+    pub fn sample_at_times(
+        &self,
+        tstep: f64,
+        tstart: Option<f64>,
+        tstop: Option<f64>,
+    ) -> TransientResult {
+        let tstart = tstart.unwrap_or(0.0);
+        let tstop = tstop.unwrap_or_else(|| self.points.last().map(|p| p.time).unwrap_or(0.0));
+
+        let mut sampled_points = Vec::new();
+        let mut t = tstart;
+
+        while t <= tstop + tstep * 0.001 {
+            if let Some(solution) = self.interpolate_at(t) {
+                sampled_points.push(TimePoint { time: t, solution });
+            }
+            t += tstep;
+        }
+
+        TransientResult {
+            points: sampled_points,
+            num_nodes: self.num_nodes,
+        }
+    }
+
+    /// Get the voltage at a node at a specific time (interpolated).
+    pub fn voltage_at(&self, node_idx: usize, time: f64) -> Option<f64> {
+        self.interpolate_at(time).map(|sol| sol[node_idx])
     }
 }
 
@@ -1065,5 +1211,89 @@ mod tests {
             "LTE {} seems too large for constant-rate change",
             lte
         );
+    }
+
+    #[test]
+    fn test_interpolate_at() {
+        // Create a simple result with known values
+        let points = vec![
+            TimePoint {
+                time: 0.0,
+                solution: DVector::from_vec(vec![0.0, 0.0]),
+            },
+            TimePoint {
+                time: 1.0,
+                solution: DVector::from_vec(vec![1.0, 2.0]),
+            },
+            TimePoint {
+                time: 2.0,
+                solution: DVector::from_vec(vec![2.0, 4.0]),
+            },
+        ];
+
+        let result = TransientResult {
+            points,
+            num_nodes: 2,
+        };
+
+        // Test interpolation at midpoint
+        let interp = result.interpolate_at(0.5).unwrap();
+        assert!((interp[0] - 0.5).abs() < 1e-10);
+        assert!((interp[1] - 1.0).abs() < 1e-10);
+
+        // Test interpolation at 1.5
+        let interp = result.interpolate_at(1.5).unwrap();
+        assert!((interp[0] - 1.5).abs() < 1e-10);
+        assert!((interp[1] - 3.0).abs() < 1e-10);
+
+        // Test at exact points
+        let interp = result.interpolate_at(1.0).unwrap();
+        assert!((interp[0] - 1.0).abs() < 1e-10);
+        assert!((interp[1] - 2.0).abs() < 1e-10);
+
+        // Test voltage_at helper
+        assert!((result.voltage_at(0, 0.5).unwrap() - 0.5).abs() < 1e-10);
+        assert!((result.voltage_at(1, 1.5).unwrap() - 3.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_sample_at_times() {
+        // Create a result with 3 points at t=0, 0.3, 1.0
+        let points = vec![
+            TimePoint {
+                time: 0.0,
+                solution: DVector::from_vec(vec![0.0]),
+            },
+            TimePoint {
+                time: 0.3,
+                solution: DVector::from_vec(vec![0.3]),
+            },
+            TimePoint {
+                time: 1.0,
+                solution: DVector::from_vec(vec![1.0]),
+            },
+        ];
+
+        let result = TransientResult {
+            points,
+            num_nodes: 1,
+        };
+
+        // Sample at tstep=0.25
+        let sampled = result.sample_at_times(0.25, None, None);
+
+        // Should have 5 points: 0.0, 0.25, 0.5, 0.75, 1.0
+        assert_eq!(sampled.points.len(), 5);
+
+        // Check times
+        assert!((sampled.points[0].time - 0.0).abs() < 1e-10);
+        assert!((sampled.points[1].time - 0.25).abs() < 1e-10);
+        assert!((sampled.points[2].time - 0.5).abs() < 1e-10);
+        assert!((sampled.points[3].time - 0.75).abs() < 1e-10);
+        assert!((sampled.points[4].time - 1.0).abs() < 1e-10);
+
+        // Check interpolated values (linear from 0 to 1)
+        assert!((sampled.points[0].solution[0] - 0.0).abs() < 1e-10);
+        assert!((sampled.points[4].solution[0] - 1.0).abs() < 1e-10);
     }
 }

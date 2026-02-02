@@ -814,3 +814,23 @@ Added Gmin stepping as a convergence aid that adds a small conductance from each
 5. Each level uses previous solution as initial guess
 
 **Tests:** 251 total passing (1 new Gmin stepping test)
+
+### Phase 6: Output at Specified Times
+
+Added interpolation and resampling methods to transient analysis results, enabling output at regular time intervals from simulations with variable (adaptive) timesteps.
+
+**TransientResult extensions (`spicier-solver/src/transient.rs`):**
+- `interpolate_at(time)` — linear interpolation between nearest timepoints
+- `sample_at_times(tstep, tstart, tstop)` — resample waveform at regular intervals
+- `voltage_at(node_idx, time)` — convenience for single-node voltage at specific time
+
+**AdaptiveTransientResult extensions:**
+- Same methods as TransientResult
+- `sample_at_times()` returns regular TransientResult for uniform output
+
+**Use case:**
+- Adaptive solver computes at variable timesteps (e.g., 1ns to 100ns based on LTE)
+- User wants output at uniform 10ns intervals
+- Call `result.sample_at_times(10e-9, None, None)` to get resampled result
+
+**Tests:** 253 total passing (2 new interpolation/sampling tests)
