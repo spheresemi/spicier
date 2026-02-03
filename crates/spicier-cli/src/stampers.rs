@@ -352,6 +352,106 @@ impl AcStamper for NetlistAcStamper<'_> {
                         mna.add_element(e, e, Complex::new(gm, 0.0));
                     }
                 }
+                AcDeviceInfo::TransmissionLine {
+                    port1_pos,
+                    port1_neg: _,
+                    port2_pos,
+                    port2_neg: _,
+                    z0,
+                    td,
+                    num_sections,
+                    internal_nodes,
+                    current_base_index,
+                } => {
+                    // Transmission line lumped LC model:
+                    // L per section = Z0 * TD / N
+                    // C per section = TD / (Z0 * N)
+                    //
+                    // The LC ladder: Port1+ --L1-- int[0] --L2-- int[1] ... --LN-- Port2+
+                    //                              |            |              |
+                    //                              C1           C2            CN
+                    //                              |            |              |
+                    //                            Port1-      Port1-         Port2-
+                    //
+                    // For simplicity, we assume port1_neg == port2_neg (common ground).
+                    // The capacitors are connected to ground at each internal node and ports.
+
+                    let l_section = z0 * td / num_sections as f64;
+                    let c_section = td / (z0 * num_sections as f64);
+
+                    // Build node chain: port1_pos, internal_nodes[0..N-2], port2_pos
+                    let mut node_chain: Vec<Option<usize>> = Vec::with_capacity(num_sections + 1);
+                    node_chain.push(port1_pos);
+                    for int_node in &internal_nodes {
+                        node_chain.push(*int_node);
+                    }
+                    node_chain.push(port2_pos);
+
+                    // Stamp each LC section
+                    for i in 0..num_sections {
+                        let left_node = node_chain[i];
+                        let right_node = node_chain[i + 1];
+                        let branch_idx = current_base_index + i;
+
+                        // Stamp inductor with jωL impedance
+                        mna.stamp_inductor(left_node, right_node, branch_idx, omega, l_section);
+
+                        // Stamp shunt capacitor at right_node with jωC admittance
+                        let yc = Complex::new(0.0, omega * c_section);
+                        mna.stamp_admittance(right_node, None, yc);
+                    }
+                }
+                AcDeviceInfo::Bsim3Mosfet {
+                    drain,
+                    gate,
+                    source,
+                    bulk,
+                    gds,
+                    gm,
+                    gmbs,
+                    cgs,
+                    cgd,
+                    cgb,
+                    cbs,
+                    cbd,
+                } => {
+                    // BSIM3 small-signal model with capacitances:
+                    // 1. gds conductance between drain and source
+                    mna.stamp_conductance(drain, source, gds);
+
+                    // 2. gm transconductance: current gm*Vgs from drain to source
+                    mna.stamp_vccs(drain, source, gate, source, gm);
+
+                    // 3. gmbs transconductance: current gmbs*Vbs from drain to source
+                    mna.stamp_vccs(drain, source, bulk, source, gmbs);
+
+                    // 4. Capacitances as jωC admittances
+                    // Cgs: gate to source
+                    if cgs > 0.0 {
+                        let yc = Complex::new(0.0, omega * cgs);
+                        mna.stamp_admittance(gate, source, yc);
+                    }
+                    // Cgd: gate to drain
+                    if cgd > 0.0 {
+                        let yc = Complex::new(0.0, omega * cgd);
+                        mna.stamp_admittance(gate, drain, yc);
+                    }
+                    // Cgb: gate to bulk
+                    if cgb > 0.0 {
+                        let yc = Complex::new(0.0, omega * cgb);
+                        mna.stamp_admittance(gate, bulk, yc);
+                    }
+                    // Cbs: bulk to source (junction)
+                    if cbs > 0.0 {
+                        let yc = Complex::new(0.0, omega * cbs);
+                        mna.stamp_admittance(bulk, source, yc);
+                    }
+                    // Cbd: bulk to drain (junction)
+                    if cbd > 0.0 {
+                        let yc = Complex::new(0.0, omega * cbd);
+                        mna.stamp_admittance(bulk, drain, yc);
+                    }
+                }
                 AcDeviceInfo::None | _ => {}
             }
         }
@@ -373,12 +473,15 @@ pub struct NetlistTransientStamper<'a> {
 
 impl TransientStamper for NetlistTransientStamper<'_> {
     fn stamp_at_time(&self, mna: &mut MnaSystem, time: f64) {
-        // Stamp all devices that are NOT capacitors or inductors.
-        // Capacitors and inductors are handled by companion models.
+        // Stamp all devices that are NOT capacitors, inductors, or transmission lines.
+        // Capacitors, inductors, and transmission lines (which expand to LC sections)
+        // are handled by companion models.
         // For time-varying sources (PULSE, SIN), evaluate at the given time.
         for device in self.netlist.devices() {
             match device.transient_info() {
-                TransientDeviceInfo::Capacitor { .. } | TransientDeviceInfo::Inductor { .. } => {
+                TransientDeviceInfo::Capacitor { .. }
+                | TransientDeviceInfo::Inductor { .. }
+                | TransientDeviceInfo::TransmissionLine { .. } => {
                     // Skip reactive devices; their companion models are stamped separately
                 }
                 TransientDeviceInfo::None | _ => {
@@ -393,14 +496,17 @@ impl TransientStamper for NetlistTransientStamper<'_> {
     }
 
     fn num_vsources(&self) -> usize {
-        // Count only voltage source current vars, not inductor branch currents.
+        // Count only voltage source current vars, not inductor or transmission line branch currents.
         // In transient mode, inductors are replaced by companion models (conductance + current source)
-        // and don't need branch current variables.
+        // and don't need branch current variables. Transmission lines expand to LC sections
+        // whose inductors are also handled by companion models.
         let mut vs_count = 0;
         for device in self.netlist.devices() {
             match device.transient_info() {
-                TransientDeviceInfo::Inductor { .. } => {
+                TransientDeviceInfo::Inductor { .. }
+                | TransientDeviceInfo::TransmissionLine { .. } => {
                     // Inductor companion model doesn't need branch current var
+                    // Transmission line inductors are also handled as companion models
                 }
                 _ => {
                     vs_count += device.num_current_vars();
@@ -439,6 +545,45 @@ pub fn build_transient_state(
                     node_neg,
                     branch_index,
                 ));
+            }
+            TransientDeviceInfo::TransmissionLine {
+                port1_pos,
+                port1_neg: _,
+                port2_pos,
+                port2_neg: _,
+                z0,
+                td,
+                num_sections,
+                internal_nodes,
+                current_base_index,
+            } => {
+                // Expand transmission line into LC sections for transient analysis.
+                // L per section = Z0 * TD / N
+                // C per section = TD / (Z0 * N)
+
+                let l_section = z0 * td / num_sections as f64;
+                let c_section = td / (z0 * num_sections as f64);
+
+                // Build node chain: port1_pos, internal_nodes[0..N-2], port2_pos
+                let mut node_chain: Vec<Option<usize>> = Vec::with_capacity(num_sections + 1);
+                node_chain.push(port1_pos);
+                for int_node in &internal_nodes {
+                    node_chain.push(*int_node);
+                }
+                node_chain.push(port2_pos);
+
+                // Create LC elements for each section
+                for i in 0..num_sections {
+                    let left_node = node_chain[i];
+                    let right_node = node_chain[i + 1];
+                    let branch_index = current_base_index + i;
+
+                    // Inductor in series
+                    inds.push(InductorState::new(l_section, left_node, right_node, branch_index));
+
+                    // Shunt capacitor at right_node (to ground)
+                    caps.push(CapacitorState::new(c_section, right_node, None));
+                }
             }
             TransientDeviceInfo::None | _ => {}
         }

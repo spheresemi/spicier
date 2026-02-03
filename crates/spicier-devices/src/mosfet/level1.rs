@@ -1,4 +1,7 @@
-//! MOSFET Level 1 device model.
+//! MOSFET Level 1 (Shichman-Hodges) device model.
+//!
+//! This is a simple square-law model suitable for hand calculations
+//! and basic circuit analysis. For short-channel effects, use BSIM3.
 
 use nalgebra::DVector;
 use spicier_core::mna::MnaSystem;

@@ -7,6 +7,7 @@
 //! - Controlled sources: E (VCVS), G (VCCS), F (CCCS), H (CCVS)
 //! - Behavioral sources: B (arbitrary expressions)
 //! - Mutual inductance: K (coupling between inductors)
+//! - Transmission lines: T (lossless, lumped LC model)
 //! - Batched device evaluation with SIMD-friendly SoA layout
 
 pub mod batch;
@@ -22,6 +23,7 @@ pub mod mutual;
 pub mod passive;
 pub mod sources;
 pub mod stamp;
+pub mod tline;
 pub mod waveforms;
 
 // Re-export batch types
@@ -48,14 +50,20 @@ pub use expression::{EvalContext, Expr, parse_expression};
 // Re-export JFET
 pub use jfet::{Jfet, JfetParams, JfetRegion, JfetType};
 
-// Re-export MOSFET
-pub use mosfet::{Mosfet, MosfetParams, MosfetRegion, MosfetType};
+// Re-export MOSFET (Level 1)
+pub use mosfet::{Mosfet, MosfetLevel, MosfetParams, MosfetRegion, MosfetType};
+
+// Re-export BSIM3 MOSFET
+pub use mosfet::bsim3::{Bsim3Mosfet, Bsim3Params, Bsim3Region};
 
 // Re-export mutual inductance
 pub use mutual::MutualInductance;
 
 // Re-export passive elements
 pub use passive::{Capacitor, Inductor, Resistor};
+
+// Re-export transmission line
+pub use tline::TransmissionLine;
 
 // Re-export sources
 pub use sources::{CurrentSource, VoltageSource};

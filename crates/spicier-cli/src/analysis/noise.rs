@@ -114,6 +114,18 @@ impl<'a> NoiseStamper for NetlistNoiseStamper<'a> {
                         ));
                     }
                 }
+                AcDeviceInfo::Bsim3Mosfet { drain, source, gds, .. } => {
+                    // BSIM3 MOSFET thermal noise from channel
+                    // Similar to Level 1 MOSFET, model as equivalent resistance Req = 1/gds
+                    if gds > 0.0 {
+                        sources.push(NoiseSource::thermal(
+                            format!("{}_chan", name),
+                            drain,
+                            source,
+                            1.0 / gds,
+                        ));
+                    }
+                }
                 _ => {}
             }
         }
@@ -322,6 +334,7 @@ pub fn run_noise_analysis(
         output_node: output_idx,
         output_ref_node: output_ref_idx,
         input_source_idx: Some(input_source_idx),
+        source_resistance: None, // Could be extracted from input source Rs in future
         fstart,
         fstop,
         num_points,

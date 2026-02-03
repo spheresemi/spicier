@@ -93,6 +93,29 @@ pub enum AcDeviceInfo {
         /// Transconductance gm = dIds/dVgs at DC operating point.
         gm: f64,
     },
+    /// BSIM3 MOSFET: linearized as gds + gm*Vgs + gmbs*Vbs at operating point.
+    Bsim3Mosfet {
+        drain: Option<usize>,
+        gate: Option<usize>,
+        source: Option<usize>,
+        bulk: Option<usize>,
+        /// Output conductance gds = dIds/dVds at DC operating point.
+        gds: f64,
+        /// Transconductance gm = dIds/dVgs at DC operating point.
+        gm: f64,
+        /// Body transconductance gmbs = dIds/dVbs at DC operating point.
+        gmbs: f64,
+        /// Gate-source capacitance (F) - intrinsic + overlap.
+        cgs: f64,
+        /// Gate-drain capacitance (F) - intrinsic + overlap.
+        cgd: f64,
+        /// Gate-bulk capacitance (F) - intrinsic + overlap.
+        cgb: f64,
+        /// Bulk-source junction capacitance (F).
+        cbs: f64,
+        /// Bulk-drain junction capacitance (F).
+        cbd: f64,
+    },
     /// JFET: linearized as gds + gm*Vgs at operating point.
     Jfet {
         drain: Option<usize>,
@@ -124,6 +147,27 @@ pub enum AcDeviceInfo {
         /// Mutual inductance M = k * sqrt(L1 * L2).
         mutual_inductance: f64,
     },
+    /// Transmission line: lumped LC model.
+    TransmissionLine {
+        /// Port 1 positive node index.
+        port1_pos: Option<usize>,
+        /// Port 1 negative node index.
+        port1_neg: Option<usize>,
+        /// Port 2 positive node index.
+        port2_pos: Option<usize>,
+        /// Port 2 negative node index.
+        port2_neg: Option<usize>,
+        /// Characteristic impedance (Ohms).
+        z0: f64,
+        /// Propagation delay (seconds).
+        td: f64,
+        /// Number of LC sections.
+        num_sections: usize,
+        /// Internal node indices for the LC ladder.
+        internal_nodes: Vec<Option<usize>>,
+        /// Base index for inductor branch currents.
+        current_base_index: usize,
+    },
     /// Unknown device or no AC contribution.
     None,
 }
@@ -154,6 +198,27 @@ pub enum TransientDeviceInfo {
         l2_branch_idx: usize,
         /// Mutual inductance M = k * sqrt(L1 * L2).
         mutual_inductance: f64,
+    },
+    /// Transmission line: lumped LC model.
+    TransmissionLine {
+        /// Port 1 positive node index.
+        port1_pos: Option<usize>,
+        /// Port 1 negative node index.
+        port1_neg: Option<usize>,
+        /// Port 2 positive node index.
+        port2_pos: Option<usize>,
+        /// Port 2 negative node index.
+        port2_neg: Option<usize>,
+        /// Characteristic impedance (Ohms).
+        z0: f64,
+        /// Propagation delay (seconds).
+        td: f64,
+        /// Number of LC sections.
+        num_sections: usize,
+        /// Internal node indices for the LC ladder.
+        internal_nodes: Vec<Option<usize>>,
+        /// Base index for inductor branch currents.
+        current_base_index: usize,
     },
     /// Not a reactive device.
     None,

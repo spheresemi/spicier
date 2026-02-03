@@ -7,7 +7,7 @@ use spicier_devices::bjt::BjtParams;
 use spicier_devices::diode::DiodeParams;
 use spicier_devices::expression::{EvalContext, parse_expression_with_params};
 use spicier_devices::jfet::JfetParams;
-use spicier_devices::mosfet::MosfetParams;
+use spicier_devices::mosfet::{Bsim3Params, MosfetParams, MosfetType};
 
 use crate::error::{Error, Result};
 use crate::lexer::Token;
@@ -666,34 +666,60 @@ impl<'a> Parser<'a> {
                 ModelDefinition::Diode(dp)
             }
             "NMOS" => {
-                let mut mp = MosfetParams::nmos_default();
-                for (k, v) in &params {
-                    match k.as_str() {
-                        "VTO" => mp.vto = *v,
-                        "KP" => mp.kp = *v,
-                        "LAMBDA" => mp.lambda = *v,
-                        "COX" => mp.cox = *v,
-                        "W" => mp.w = *v,
-                        "L" => mp.l = *v,
-                        _ => {}
+                // Check for LEVEL parameter to determine model type
+                let level = params
+                    .iter()
+                    .find(|(k, _)| k == "LEVEL")
+                    .map(|(_, v)| *v as i32)
+                    .unwrap_or(1);
+                if level == 49 || level == 8 {
+                    // BSIM3 model
+                    let bp = parse_bsim3_params(&params, MosfetType::Nmos);
+                    ModelDefinition::Nmos49(bp)
+                } else {
+                    // Level 1 (Shichman-Hodges) model
+                    let mut mp = MosfetParams::nmos_default();
+                    for (k, v) in &params {
+                        match k.as_str() {
+                            "VTO" => mp.vto = *v,
+                            "KP" => mp.kp = *v,
+                            "LAMBDA" => mp.lambda = *v,
+                            "COX" => mp.cox = *v,
+                            "W" => mp.w = *v,
+                            "L" => mp.l = *v,
+                            _ => {}
+                        }
                     }
+                    ModelDefinition::Nmos(mp)
                 }
-                ModelDefinition::Nmos(mp)
             }
             "PMOS" => {
-                let mut mp = MosfetParams::pmos_default();
-                for (k, v) in &params {
-                    match k.as_str() {
-                        "VTO" => mp.vto = *v,
-                        "KP" => mp.kp = *v,
-                        "LAMBDA" => mp.lambda = *v,
-                        "COX" => mp.cox = *v,
-                        "W" => mp.w = *v,
-                        "L" => mp.l = *v,
-                        _ => {}
+                // Check for LEVEL parameter to determine model type
+                let level = params
+                    .iter()
+                    .find(|(k, _)| k == "LEVEL")
+                    .map(|(_, v)| *v as i32)
+                    .unwrap_or(1);
+                if level == 49 || level == 8 {
+                    // BSIM3 model
+                    let bp = parse_bsim3_params(&params, MosfetType::Pmos);
+                    ModelDefinition::Pmos49(bp)
+                } else {
+                    // Level 1 (Shichman-Hodges) model
+                    let mut mp = MosfetParams::pmos_default();
+                    for (k, v) in &params {
+                        match k.as_str() {
+                            "VTO" => mp.vto = *v,
+                            "KP" => mp.kp = *v,
+                            "LAMBDA" => mp.lambda = *v,
+                            "COX" => mp.cox = *v,
+                            "W" => mp.w = *v,
+                            "L" => mp.l = *v,
+                            _ => {}
+                        }
                     }
+                    ModelDefinition::Pmos(mp)
                 }
-                ModelDefinition::Pmos(mp)
             }
             "NJF" => {
                 let mut jp = JfetParams::njf_default();
@@ -1408,4 +1434,122 @@ impl<'a> Parser<'a> {
 
         Ok((val, trigger))
     }
+}
+
+/// Parse BSIM3v3 model parameters from parameter list.
+fn parse_bsim3_params(params: &[(String, f64)], mos_type: MosfetType) -> Bsim3Params {
+    let mut bp = match mos_type {
+        MosfetType::Nmos => Bsim3Params::nmos_default(),
+        MosfetType::Pmos => Bsim3Params::pmos_default(),
+        _ => Bsim3Params::nmos_default(), // Fallback for future variants
+    };
+
+    for (k, v) in params {
+        match k.as_str() {
+            // Geometry parameters
+            "TOX" => bp.tox = *v,
+            "LINT" | "DL" => bp.lint = *v,
+            "WINT" | "DW" => bp.wint = *v,
+
+            // Threshold voltage parameters
+            "VTH0" | "VTHO" => bp.vth0 = *v,
+            "K1" => bp.k1 = *v,
+            "K2" => bp.k2 = *v,
+            "DVT0" => bp.dvt0 = *v,
+            "DVT1" => bp.dvt1 = *v,
+            "DVT2" => bp.dvt2 = *v,
+            "NLX" => bp.nlx = *v,
+            "VOFF" => bp.voff = *v,
+            "NFACTOR" => bp.nfactor = *v,
+
+            // Mobility parameters
+            "U0" | "UO" => bp.u0 = *v,
+            "UA" => bp.ua = *v,
+            "UB" => bp.ub = *v,
+            "UC" => bp.uc = *v,
+            "VSAT" => bp.vsat = *v,
+
+            // Output conductance parameters
+            "PCLM" => bp.pclm = *v,
+            "PDIBLC1" => bp.pdiblc1 = *v,
+            "PDIBLC2" => bp.pdiblc2 = *v,
+            "DROUT" => bp.drout = *v,
+            "DELTA" => bp.delta = *v,
+
+            // DIBL parameters
+            "ETA0" => bp.eta0 = *v,
+            "ETAB" => bp.etab = *v,
+            "DSUB" => bp.dsub = *v,
+
+            // Width effect parameters (Phase 2)
+            "K3" => bp.k3 = *v,
+            "K3B" => bp.k3b = *v,
+            "W0" => bp.w0 = *v,
+            "DVT0W" => bp.dvt0w = *v,
+            "DVT1W" => bp.dvt1w = *v,
+            "DVT2W" => bp.dvt2w = *v,
+
+            // Enhanced DIBL parameters (Phase 2)
+            "PDIBLCB" => bp.pdiblcb = *v,
+            "FPROUT" => bp.fprout = *v,
+            "PVAG" => bp.pvag = *v,
+
+            // Substrate current parameters (Phase 2)
+            "ALPHA0" => bp.alpha0 = *v,
+            "BETA0" => bp.beta0 = *v,
+
+            // Parasitic resistance
+            "RDSW" => bp.rdsw = *v,
+            "RD" => bp.rd = *v,
+            "RS" => bp.rs = *v,
+            "PRWB" => bp.prwb = *v,
+            "PRWG" => bp.prwg = *v,
+
+            // Process parameters
+            "NCH" => bp.nch = *v,
+            "NGATE" => bp.ngate = *v,
+            "NSUB" => bp.nsub = *v,
+            "XT" => bp.xt = *v,
+
+            // Capacitance parameters (Phase 3)
+            "CGSO" => bp.cgso = *v,
+            "CGDO" => bp.cgdo = *v,
+            "CGBO" => bp.cgbo = *v,
+            "CJ" => bp.cj = *v,
+            "CJSW" => bp.cjsw = *v,
+            "CJSWG" => bp.cjswg = *v,
+            "MJ" => bp.mj = *v,
+            "MJSW" => bp.mjsw = *v,
+            "MJSWG" => bp.mjswg = *v,
+            "PB" => bp.pb = *v,
+            "PBSW" => bp.pbsw = *v,
+            "PBSWG" => bp.pbswg = *v,
+
+            // Temperature parameters (Phase 4)
+            "TNOM" => bp.tnom = *v + 273.15, // Convert °C to K if needed
+            "KT1" => bp.kt1 = *v,
+            "KT1L" => bp.kt1l = *v,
+            "KT2" => bp.kt2 = *v,
+            "UTE" => bp.ute = *v,
+            "UA1" => bp.ua1 = *v,
+            "UB1" => bp.ub1 = *v,
+            "UC1" => bp.uc1 = *v,
+            "AT" => bp.at = *v,
+            "PRT" => bp.prt = *v,
+
+            // Instance parameters (model defaults)
+            "W" => bp.w = *v,
+            "L" => bp.l = *v,
+            "NF" => bp.nf = *v,
+            "AS" => bp.as_ = *v,
+            "AD" => bp.ad = *v,
+            "PS" => bp.ps = *v,
+            "PD" => bp.pd = *v,
+
+            // Skip LEVEL and unrecognized parameters
+            _ => {}
+        }
+    }
+
+    bp
 }
