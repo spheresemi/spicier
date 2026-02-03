@@ -36,6 +36,8 @@ pub struct Bsim3Derived {
     pub rds: f64,
     /// BSIM3 Abulk coefficient for bulk charge effect
     pub abulk0: f64,
+    /// Built-in potential Vbi (V) for SCE calculation
+    pub vbi: f64,
 
     // ========================================
     // Capacitance-related derived values (Phase 3)
@@ -111,6 +113,13 @@ impl Bsim3Derived {
         // For now, use simplified: abulk0 = 1 + k1ox / (2 * sqrt_phi)
         let abulk0 = 1.0 + k1ox / (2.0 * sqrt_phi);
 
+        // Built-in potential for source/drain junctions
+        // Vbi = Vt * ln(Nch * Ngate / ni²) for n+/p junction
+        // Simplified: Vbi ≈ 0.9V for typical doping levels
+        // This is used in the SCE formula: ΔVth_SCE = -2*(Vbi - φs)*DVT0*θ*(1+DVT2*Vbs)
+        // where φs is half the surface potential at threshold
+        let vbi = vt * ((p.nch * 1e6) / Bsim3Params::NI).ln() + 0.56; // Add half bandgap
+
         // Overlap capacitances (Phase 3)
         // Cgs_ov = CGSO * Weff, Cgd_ov = CGDO * Weff, Cgb_ov = CGBO * Leff
         let cgs_ov = p.cgso * weff;
@@ -126,11 +135,7 @@ impl Bsim3Derived {
         } else {
             weff * diff_length
         };
-        let ad_eff = if p.ad > 0.0 {
-            p.ad
-        } else {
-            weff * diff_length
-        };
+        let ad_eff = if p.ad > 0.0 { p.ad } else { weff * diff_length };
         let ps_eff = if p.ps > 0.0 {
             p.ps
         } else {
@@ -167,6 +172,7 @@ impl Bsim3Derived {
             lt,
             rds,
             abulk0,
+            vbi,
             cgs_ov,
             cgd_ov,
             cgb_ov,
@@ -234,6 +240,9 @@ impl Bsim3Derived {
         // Bulk charge effect coefficient
         let abulk0 = 1.0 + k1ox / (2.0 * sqrt_phi);
 
+        // Built-in potential (temperature-dependent via Vt)
+        let vbi = vt * ((p.nch * 1e6) / Bsim3Params::NI).ln() + 0.56;
+
         // Overlap capacitances (not temperature dependent)
         let cgs_ov = p.cgso * weff;
         let cgd_ov = p.cgdo * weff;
@@ -241,10 +250,22 @@ impl Bsim3Derived {
 
         // Diffusion areas and perimeters
         let diff_length = 0.5e-6;
-        let as_eff = if p.as_ > 0.0 { p.as_ } else { weff * diff_length };
+        let as_eff = if p.as_ > 0.0 {
+            p.as_
+        } else {
+            weff * diff_length
+        };
         let ad_eff = if p.ad > 0.0 { p.ad } else { weff * diff_length };
-        let ps_eff = if p.ps > 0.0 { p.ps } else { 2.0 * (weff + diff_length) };
-        let pd_eff = if p.pd > 0.0 { p.pd } else { 2.0 * (weff + diff_length) };
+        let ps_eff = if p.ps > 0.0 {
+            p.ps
+        } else {
+            2.0 * (weff + diff_length)
+        };
+        let pd_eff = if p.pd > 0.0 {
+            p.pd
+        } else {
+            2.0 * (weff + diff_length)
+        };
 
         // Temperature-scaled threshold voltage shift
         // dVth = KT1*(T/Tnom - 1) + KT1L/Leff*(T/Tnom - 1)
@@ -275,6 +296,7 @@ impl Bsim3Derived {
             lt,
             rds,
             abulk0,
+            vbi,
             cgs_ov,
             cgd_ov,
             cgb_ov,

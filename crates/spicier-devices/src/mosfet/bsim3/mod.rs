@@ -31,8 +31,8 @@ pub mod params;
 
 pub use derived::Bsim3Derived;
 pub use evaluate::{
-    evaluate as bsim3_evaluate, evaluate_capacitances as bsim3_evaluate_caps, Bsim3CapResult,
-    Bsim3EvalResult, Bsim3Region,
+    Bsim3CapResult, Bsim3EvalResult, Bsim3Region, evaluate as bsim3_evaluate,
+    evaluate_capacitances as bsim3_evaluate_caps,
 };
 pub use params::Bsim3Params;
 
