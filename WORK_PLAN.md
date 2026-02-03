@@ -1150,7 +1150,7 @@ GPU eigenvalue analysis deferred:
 
 **Goal:** Import and adapt test circuits from ngspice and spice21 to validate solver accuracy against established SPICE implementations.
 
-**Status:** Core validation infrastructure complete. 77 validation tests in ngspice_validation.rs (13 DC operating point + 4 AC transformer + 4 DC sweep characterization for BJT/JFET/K), 11 cross-simulator tests in spicier-validate.
+**Status:** ✅ Core validation complete. 85 validation tests in ngspice_validation.rs (including BJT/JFET/K DC tests, AC transformer tests, DC sweep characterization, complex circuit topologies), 16 parse/simulate tests, 75 parser unit tests. Complex circuit topologies (current mirrors, diff pairs, current sources) validated.
 
 ### 10a: ngspice Test Import
 
@@ -1169,8 +1169,9 @@ ngspice provides 113 regression tests with expected outputs and 462 example circ
   - RC low-pass filter -3dB and rolloff
   - RL high-pass filter -3dB
   - RLC series resonance
-- [ ] Parser validation (partial)
-  - Expression parsing edge cases
+- [x] Parser validation (75 unit tests)
+  - Expression parsing (arithmetic, functions, parameters)
+  - Subcircuit PARAMS: and curly brace expressions
 - [ ] Additional ngspice regression tests
 
 **Test infrastructure:**
@@ -1242,22 +1243,23 @@ Extended validation for newly implemented device models.
   - Verify Ids = β(Vgs - Vto)² relationship
 - [x] JFET Ids vs Vds sweep (triode to saturation transition)
 
-**Complex Circuit Topologies (Future):**
-- [ ] BJT current mirror
-- [ ] BJT differential pair
-- [ ] JFET current source
-- [ ] Transformer-coupled amplifier
+**Complex Circuit Topologies (✅ Complete):**
+- [x] BJT current mirror
+- [x] BJT differential pair
+- [x] JFET current source
+- [x] Transformer-coupled amplifier
 
 **Dependencies:** Core analysis types complete (Phases 4-7)
 
 **Acceptance Criteria:**
-- [x] 81 validation tests pass (analytical, golden data, cross-simulator)
+- [x] 85 validation tests pass (analytical, golden data, cross-simulator)
 - [x] All existing tests continue to pass
 - [x] Nonlinear device model discrepancies resolved (diode ~0%, MOSFET ~0.6%)
 - [x] 13 new BJT/JFET/K validation tests pass (DC operating point)
 - [x] 4 AC transformer tests verify frequency-domain coupling
 - [x] 4 DC sweep tests verify I-V characteristics match theory
 - [x] 4 AC amplifier gain tests verify small-signal models
+- [x] 4 complex circuit topology tests verify current mirrors, diff pairs, etc.
 
 ---
 
@@ -1390,7 +1392,7 @@ Post-processing measurements extract key metrics from simulation results.
 - [x] Measurement result output in CLI (tabular format)
 - [x] Error reporting for failed measurements
 
-### 12c: Noise Analysis ✅
+### 12c: Noise Analysis ✅ COMPLETE
 
 Small-signal noise analysis for analog circuit design.
 
@@ -1402,16 +1404,16 @@ Small-signal noise analysis for analog circuit design.
 - [x] Equivalent input noise resistance ✅
 - [x] Integrated noise over frequency range ✅
 - [x] .NOISE command parser support ✅
-- [ ] Noise figure calculation (future)
-- [ ] Noise spectral density file output (future)
+- [x] Noise figure calculation (NF = 10*log10(Rn/Rs)) ✅
+- [x] Noise spectral density file output (CSV export) ✅
 
 ### 12d: Additional Device Models
 
-#### K Element — Mutual Inductance ✅
+#### K Element — Mutual Inductance ✅ COMPLETE
 
 **Parser support:**
 - [x] `K<name> L1 L2 <coupling_coefficient>` syntax
-- [ ] Multi-winding support: `K<name> L1 L2 L3 ... <k>` (future)
+- [x] Multi-winding support: `K<name> L1 L2 L3 ... <k>` (generates N*(N-1)/2 pairwise couplings) ✅
 - [x] Coupling coefficient validation (0 < k ≤ 1)
 - [x] Reference to existing inductor elements by name
 
@@ -1485,17 +1487,125 @@ Small-signal noise analysis for analog circuit design.
 - [x] NJF and PJF polarity tests
 - [x] Region detection tests
 
-#### Advanced MOSFET Models
+#### BSIM3v3 MOSFET ✅ COMPLETE
 
-- [ ] BSIM3v3 MOSFET — industry-standard short-channel model
-- [ ] BSIM4 MOSFET (partial) — complex model with quantum effects
-- [ ] Parameter extraction from foundry model files
+Industry-standard short-channel model with ~30 core parameters ("BSIM3-lite").
 
-#### Transmission Lines
+**Implemented features:**
+- [x] Phase 1: Core DC model (Ids, gm, gds, gmbs)
+  - Threshold voltage with SCE, DIBL, body effect
+  - Mobility degradation (vertical/lateral fields)
+  - Velocity saturation, channel length modulation
+- [x] Phase 2: Enhanced DC model
+  - Substrate current (ALPHA0, BETA0)
+  - Narrow-width effects (K3, K3B, W0)
+  - Full DIBL model
+- [x] Phase 3: Capacitance model
+  - Meyer's model for intrinsic Cgs, Cgd, Cgb
+  - Voltage-dependent junction capacitances
+  - Overlap capacitances (CGSO, CGDO, CGBO)
+- [x] Phase 4: Temperature scaling
+  - Vth temperature dependence (KT1, KT1L, KT2)
+  - Mobility scaling (UTE exponent)
+  - Saturation velocity (AT coefficient)
+  - Parasitic resistance (PRT)
 
-- [ ] Lossless transmission line (T element): delay-based model
-- [ ] Lossy transmission line: RLGC model with skin effect
-- [ ] Coupled transmission lines: crosstalk modeling
+**Validation:**
+- [x] 35 unit tests for BSIM3 device model
+- [x] 6 validation tests against ngspice LEVEL=49
+- [x] Golden data comparison (saturation, linear, subthreshold regions)
+
+**Known limitations:**
+- BSIM3-lite produces ~2x higher current than full BSIM3v3.3
+- Simplified equations vs ngspice's 200+ parameter model
+- Qualitative behavior correct; absolute values differ
+
+#### BSIM4 MOSFET (Future)
+
+Next-generation model with quantum effects and stress modeling.
+
+**Planned features (not yet implemented):**
+- [ ] Quantum mechanical effects
+  - Poly-silicon depletion
+  - Gate tunneling current (IGIDL, IGISL)
+  - Inversion layer quantization
+- [ ] Stress effects (SAREF, SBREF, WLOD)
+- [ ] Unified flicker noise model
+- [ ] Improved subthreshold modeling
+- [ ] Self-heating effects
+
+**Estimated effort:** 2-3 weeks (significantly more complex than BSIM3)
+
+#### Parameter Extraction (Future)
+
+- [ ] Parse foundry PDK model files
+- [ ] BSIM3/BSIM4 parameter binning (L/W interpolation)
+- [ ] Corner model support (TT, FF, SS, SF, FS)
+
+#### T Element — Transmission Line ✅
+
+**Parser support:**
+- [x] `T<name> <port1+> <port1-> <port2+> <port2-> Z0=<impedance> TD=<delay>` syntax
+- [x] Optional `NL=<num_sections>` parameter (default: 10)
+- [x] Validation of required parameters (Z0, TD)
+
+**Device model (Lumped LC Approximation):**
+- [x] `TransmissionLine` struct with Z0, TD, num_sections
+- [x] LC section values: L_section = Z0 × TD / N, C_section = TD / (Z0 × N)
+- [x] Internal node generation for LC ladder
+- [x] Automatic internal node creation during parsing
+
+**DC analysis:**
+- [x] Short-circuit model (inductors are shorts at DC)
+- [x] Proper branch current variables for each inductor section
+
+**AC analysis (small-signal):**
+- [x] `AcDeviceInfo::TransmissionLine` with LC expansion
+- [x] Complex admittance stamping for capacitors (jωC)
+- [x] Complex impedance stamping for inductors (jωL)
+
+**Transient analysis:**
+- [x] `TransientDeviceInfo::TransmissionLine` for LC expansion
+- [x] Companion model integration via build_transient_state()
+- [x] Proper handling in transient stamper
+
+**Future enhancements:**
+
+#### Bergeron Transmission Line Model (Planned)
+
+Exact traveling-wave model using method of characteristics.
+
+**Core algorithm:**
+- [ ] Delayed voltage/current history buffers
+  - Store V and I at each port for time TD in the past
+  - Circular buffer with interpolation for arbitrary timesteps
+- [ ] Bergeron companion model
+  - `V1(t) = Z0*I1(t) + 2*V2(t-TD) - Z0*I2(t-TD)` (incident + reflected)
+  - Equivalent resistance Z0 with history-dependent source
+- [ ] Timestep synchronization
+  - Ensure simulation timestep divides TD evenly, or interpolate
+  - Handle TD < timestep case (lumped approximation fallback)
+
+**Advantages over lumped LC:**
+- Exact delay (no dispersion)
+- Single matrix entry per port (vs N entries for N-section LC)
+- Better for long lines and high-frequency signals
+
+**Parser support:**
+- [ ] `T<name> ... TD=<delay>` triggers Bergeron model
+- [ ] `T<name> ... NL=<sections>` uses lumped LC model
+
+**Estimated effort:** 2-3 days
+
+#### Lossy Transmission Line (Future)
+- [ ] RLGC model with frequency-dependent losses
+- [ ] Skin effect modeling
+- [ ] Dielectric loss (conductance G)
+
+#### Coupled Transmission Lines (Future)
+- [ ] Multi-conductor transmission line (MTL) equations
+- [ ] Crosstalk modeling for parallel traces
+- [ ] Even/odd mode analysis
 
 **Dependencies:** Core functionality complete
 
@@ -1514,8 +1624,10 @@ Small-signal noise analysis for analog circuit design.
 - [x] K element (mutual inductance / coupled inductors / transformers) ✅
 - [x] Q element (BJT — Ebers-Moll model) ✅
 - [x] J element (JFET — Shichman-Hodges model) ✅
-- [ ] Additional MOSFET models (BSIM3/BSIM4)
-- [ ] Transmission lines (lossless, lossy)
+- [x] T element (Transmission line — lumped LC model) ✅
+- [x] BSIM3v3 MOSFET (30-param "BSIM3-lite") ✅
+- [ ] BSIM4 MOSFET (quantum effects, stress modeling)
+- [ ] Advanced transmission lines (Bergeron delay, lossy, coupled)
 
 ### Long-term / Research
 - S-parameter analysis
