@@ -77,17 +77,25 @@ fn extract_output_complex(
     num_nodes: usize,
 ) -> Complex<f64> {
     match output {
-        SensitivityOutput::Voltage { node_idx, .. } => {
-            solution.get(*node_idx).copied().unwrap_or(Complex::new(0.0, 0.0))
-        }
-        SensitivityOutput::Current { branch_idx, .. } => {
-            solution.get(num_nodes + *branch_idx).copied().unwrap_or(Complex::new(0.0, 0.0))
-        }
+        SensitivityOutput::Voltage { node_idx, .. } => solution
+            .get(*node_idx)
+            .copied()
+            .unwrap_or(Complex::new(0.0, 0.0)),
+        SensitivityOutput::Current { branch_idx, .. } => solution
+            .get(num_nodes + *branch_idx)
+            .copied()
+            .unwrap_or(Complex::new(0.0, 0.0)),
         SensitivityOutput::VoltageDiff {
             node_pos, node_neg, ..
         } => {
-            let vp = solution.get(*node_pos).copied().unwrap_or(Complex::new(0.0, 0.0));
-            let vn = solution.get(*node_neg).copied().unwrap_or(Complex::new(0.0, 0.0));
+            let vp = solution
+                .get(*node_pos)
+                .copied()
+                .unwrap_or(Complex::new(0.0, 0.0));
+            let vn = solution
+                .get(*node_neg)
+                .copied()
+                .unwrap_or(Complex::new(0.0, 0.0));
             vp - vn
         }
     }

@@ -117,18 +117,16 @@ pub fn compute_thd_statistics(results: &[ThdResult], thd_spec: f64) -> ThdStatis
     let mean_thd = thd_values.iter().sum::<f64>() / n;
 
     // Standard deviation
-    let variance = thd_values.iter().map(|x| (x - mean_thd).powi(2)).sum::<f64>() / n;
+    let variance = thd_values
+        .iter()
+        .map(|x| (x - mean_thd).powi(2))
+        .sum::<f64>()
+        / n;
     let std_thd = variance.sqrt();
 
     // Min/max
-    let min_thd = thd_values
-        .iter()
-        .cloned()
-        .fold(f64::INFINITY, f64::min);
-    let max_thd = thd_values
-        .iter()
-        .cloned()
-        .fold(f64::NEG_INFINITY, f64::max);
+    let min_thd = thd_values.iter().cloned().fold(f64::INFINITY, f64::min);
+    let max_thd = thd_values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 
     // Median
     let mut sorted = thd_values.clone();
@@ -352,7 +350,11 @@ mod tests {
         assert_eq!(stats.num_samples, 10);
 
         // Pure sines should have low THD
-        assert!(stats.mean_thd < 5.0, "Mean THD {} should be low for pure sines", stats.mean_thd);
+        assert!(
+            stats.mean_thd < 5.0,
+            "Mean THD {} should be low for pure sines",
+            stats.mean_thd
+        );
 
         // All should pass a 10% spec
         assert!(

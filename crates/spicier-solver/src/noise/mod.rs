@@ -40,11 +40,10 @@
 //! println!("Total output noise at 1kHz: {} V/√Hz", result.output_noise_at(1000.0));
 //! ```
 
-mod sources;
 mod analysis;
+mod sources;
 
-pub use sources::{NoiseSource, NoiseSourceType};
 pub use analysis::{
-    NoiseConfig, NoiseContribution, NoiseResult, NoiseSweepType, NoiseStamper,
-    compute_noise,
+    NoiseConfig, NoiseContribution, NoiseResult, NoiseStamper, NoiseSweepType, compute_noise,
 };
+pub use sources::{NoiseSource, NoiseSourceType};

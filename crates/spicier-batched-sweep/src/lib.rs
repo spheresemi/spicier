@@ -116,5 +116,5 @@ pub use accelerate_solver::AccelerateBatchedSolver;
 
 #[cfg(feature = "parallel")]
 pub use parallel::{
-    solve_batched_sweep_parallel, solve_batched_sweep_parallel_auto, ParallelSweepConfig,
+    ParallelSweepConfig, solve_batched_sweep_parallel, solve_batched_sweep_parallel_auto,
 };

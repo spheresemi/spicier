@@ -60,7 +60,12 @@ impl ConductanceStamp {
 
     /// Create a stamp for a conductance between two non-ground nodes.
     pub fn new(idx_ii: u32, idx_ij: u32, idx_ji: u32, idx_jj: u32) -> Self {
-        Self { idx_ii, idx_ij, idx_ji, idx_jj }
+        Self {
+            idx_ii,
+            idx_ij,
+            idx_ji,
+            idx_jj,
+        }
     }
 }
 
@@ -83,7 +88,11 @@ pub struct CurrentStamp {
 impl CurrentStamp {
     /// Create a stamp for a current source.
     pub fn new(idx_pos: u32, idx_neg: u32) -> Self {
-        Self { idx_pos, idx_neg, _pad: [0; 2] }
+        Self {
+            idx_pos,
+            idx_neg,
+            _pad: [0; 2],
+        }
     }
 }
 
@@ -97,10 +106,12 @@ pub struct GpuMatrixAssembler {
 impl GpuMatrixAssembler {
     /// Create a new matrix assembler.
     pub fn new(ctx: Arc<WgpuContext>) -> Result<Self> {
-        let shader = ctx.device().create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Matrix Assembly Shader"),
-            source: wgpu::ShaderSource::Wgsl(MATRIX_ASSEMBLY_SHADER.into()),
-        });
+        let shader = ctx
+            .device()
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Matrix Assembly Shader"),
+                source: wgpu::ShaderSource::Wgsl(MATRIX_ASSEMBLY_SHADER.into()),
+            });
 
         let bind_group_layout =
             ctx.device()
@@ -201,7 +212,9 @@ impl GpuMatrixAssembler {
         if conductances.len() != num_devices * num_sweeps {
             return Err(WgpuError::InvalidDimension(format!(
                 "conductances length {} != num_devices {} × num_sweeps {}",
-                conductances.len(), num_devices, num_sweeps
+                conductances.len(),
+                num_devices,
+                num_sweeps
             )));
         }
 
@@ -221,32 +234,32 @@ impl GpuMatrixAssembler {
             _pad: 0,
         };
 
-        let uniform_buffer = self
-            .ctx
-            .device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Assembly Uniforms"),
-                contents: bytemuck::bytes_of(&uniforms),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
+        let uniform_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Assembly Uniforms"),
+                    contents: bytemuck::bytes_of(&uniforms),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
 
-        let stamps_buffer = self
-            .ctx
-            .device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Conductance Stamps"),
-                contents: bytemuck::cast_slice(stamps),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
+        let stamps_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Conductance Stamps"),
+                    contents: bytemuck::cast_slice(stamps),
+                    usage: wgpu::BufferUsages::STORAGE,
+                });
 
-        let conductances_buffer = self
-            .ctx
-            .device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Conductances"),
-                contents: bytemuck::cast_slice(conductances),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
+        let conductances_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Conductances"),
+                    contents: bytemuck::cast_slice(conductances),
+                    usage: wgpu::BufferUsages::STORAGE,
+                });
 
         let output_size = (num_sweeps * nnz * std::mem::size_of::<f32>()) as u64;
         let output_buffer = self.ctx.device().create_buffer(&wgpu::BufferDescriptor {
@@ -289,12 +302,12 @@ impl GpuMatrixAssembler {
                 ],
             });
 
-        let mut encoder = self
-            .ctx
-            .device()
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Matrix Assembly Encoder"),
-            });
+        let mut encoder =
+            self.ctx
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Matrix Assembly Encoder"),
+                });
 
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -306,7 +319,7 @@ impl GpuMatrixAssembler {
 
             // Dispatch: one thread per (device, sweep) pair
             let total_work = (num_devices * num_sweeps) as u32;
-            let workgroups = (total_work + 255) / 256;
+            let workgroups = total_work.div_ceil(256);
             pass.dispatch_workgroups(workgroups, 1, 1);
         }
 
@@ -343,10 +356,12 @@ pub struct GpuRhsAssembler {
 impl GpuRhsAssembler {
     /// Create a new RHS assembler.
     pub fn new(ctx: Arc<WgpuContext>) -> Result<Self> {
-        let shader = ctx.device().create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("RHS Assembly Shader"),
-            source: wgpu::ShaderSource::Wgsl(RHS_ASSEMBLY_SHADER.into()),
-        });
+        let shader = ctx
+            .device()
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("RHS Assembly Shader"),
+                source: wgpu::ShaderSource::Wgsl(RHS_ASSEMBLY_SHADER.into()),
+            });
 
         let bind_group_layout =
             ctx.device()
@@ -447,7 +462,9 @@ impl GpuRhsAssembler {
         if currents.len() != num_devices * num_sweeps {
             return Err(WgpuError::InvalidDimension(format!(
                 "currents length {} != num_devices {} × num_sweeps {}",
-                currents.len(), num_devices, num_sweeps
+                currents.len(),
+                num_devices,
+                num_sweeps
             )));
         }
 
@@ -467,32 +484,32 @@ impl GpuRhsAssembler {
             _pad: 0,
         };
 
-        let uniform_buffer = self
-            .ctx
-            .device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("RHS Assembly Uniforms"),
-                contents: bytemuck::bytes_of(&uniforms),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
+        let uniform_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("RHS Assembly Uniforms"),
+                    contents: bytemuck::bytes_of(&uniforms),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
 
-        let stamps_buffer = self
-            .ctx
-            .device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Current Stamps"),
-                contents: bytemuck::cast_slice(stamps),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
+        let stamps_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Current Stamps"),
+                    contents: bytemuck::cast_slice(stamps),
+                    usage: wgpu::BufferUsages::STORAGE,
+                });
 
-        let currents_buffer = self
-            .ctx
-            .device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Currents"),
-                contents: bytemuck::cast_slice(currents),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
+        let currents_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Currents"),
+                    contents: bytemuck::cast_slice(currents),
+                    usage: wgpu::BufferUsages::STORAGE,
+                });
 
         let output_size = (num_sweeps * rhs_size * std::mem::size_of::<f32>()) as u64;
         let output_buffer = self.ctx.device().create_buffer(&wgpu::BufferDescriptor {
@@ -535,12 +552,12 @@ impl GpuRhsAssembler {
                 ],
             });
 
-        let mut encoder = self
-            .ctx
-            .device()
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("RHS Assembly Encoder"),
-            });
+        let mut encoder =
+            self.ctx
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("RHS Assembly Encoder"),
+                });
 
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -552,7 +569,7 @@ impl GpuRhsAssembler {
 
             // Dispatch: one thread per (device, sweep) pair
             let total_work = (num_devices * num_sweeps) as u32;
-            let workgroups = (total_work + 255) / 256;
+            let workgroups = total_work.div_ceil(256);
             pass.dispatch_workgroups(workgroups, 1, 1);
         }
 
@@ -794,8 +811,8 @@ mod tests {
 
         // 2 sweep points with different conductance values
         let conductances = vec![
-            1.0,  // sweep 0: G = 1.0
-            2.0,  // sweep 1: G = 2.0
+            1.0, // sweep 0: G = 1.0
+            2.0, // sweep 1: G = 2.0
         ];
 
         let result = assembler.assemble(&stamps, &conductances, 2, 4).unwrap();
@@ -806,14 +823,30 @@ mod tests {
 
         // Sweep 0
         assert!((result[0] - 1.0).abs() < 1e-6, "result[0] = {}", result[0]);
-        assert!((result[1] - (-1.0)).abs() < 1e-6, "result[1] = {}", result[1]);
-        assert!((result[2] - (-1.0)).abs() < 1e-6, "result[2] = {}", result[2]);
+        assert!(
+            (result[1] - (-1.0)).abs() < 1e-6,
+            "result[1] = {}",
+            result[1]
+        );
+        assert!(
+            (result[2] - (-1.0)).abs() < 1e-6,
+            "result[2] = {}",
+            result[2]
+        );
         assert!((result[3] - 1.0).abs() < 1e-6, "result[3] = {}", result[3]);
 
         // Sweep 1
         assert!((result[4] - 2.0).abs() < 1e-6, "result[4] = {}", result[4]);
-        assert!((result[5] - (-2.0)).abs() < 1e-6, "result[5] = {}", result[5]);
-        assert!((result[6] - (-2.0)).abs() < 1e-6, "result[6] = {}", result[6]);
+        assert!(
+            (result[5] - (-2.0)).abs() < 1e-6,
+            "result[5] = {}",
+            result[5]
+        );
+        assert!(
+            (result[6] - (-2.0)).abs() < 1e-6,
+            "result[6] = {}",
+            result[6]
+        );
         assert!((result[7] - 2.0).abs() < 1e-6, "result[7] = {}", result[7]);
     }
 
@@ -831,14 +864,12 @@ mod tests {
 
         // Resistor from node 0 to ground
         // Only stamps into (0,0) position
-        let stamps = vec![
-            ConductanceStamp {
-                idx_ii: 0,
-                idx_ij: u32::MAX, // ground
-                idx_ji: u32::MAX, // ground
-                idx_jj: u32::MAX, // ground
-            },
-        ];
+        let stamps = vec![ConductanceStamp {
+            idx_ii: 0,
+            idx_ij: u32::MAX, // ground
+            idx_ji: u32::MAX, // ground
+            idx_jj: u32::MAX, // ground
+        }];
 
         let conductances = vec![1.0];
         let result = assembler.assemble(&stamps, &conductances, 1, 1).unwrap();
@@ -883,7 +914,11 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         // Should be sum of both conductances
-        assert!((result[0] - 3.0).abs() < 1e-6, "result[0] = {} (expected 3.0)", result[0]);
+        assert!(
+            (result[0] - 3.0).abs() < 1e-6,
+            "result[0] = {} (expected 3.0)",
+            result[0]
+        );
     }
 
     #[test]
@@ -921,7 +956,9 @@ mod tests {
             .collect();
 
         let start = std::time::Instant::now();
-        let result = assembler.assemble(&stamps, &conductances, num_sweeps, nnz).unwrap();
+        let result = assembler
+            .assemble(&stamps, &conductances, num_sweeps, nnz)
+            .unwrap();
         let elapsed = start.elapsed();
 
         assert_eq!(result.len(), num_sweeps * nnz);
@@ -951,14 +988,12 @@ mod tests {
 
         // Current source from node 0 to node 1 (I = 1A)
         // RHS[0] += 1, RHS[1] -= 1
-        let stamps = vec![
-            CurrentStamp::new(0, 1),
-        ];
+        let stamps = vec![CurrentStamp::new(0, 1)];
 
         // 2 sweep points with different current values
         let currents = vec![
-            1.0,  // sweep 0: I = 1.0
-            2.0,  // sweep 1: I = 2.0
+            1.0, // sweep 0: I = 1.0
+            2.0, // sweep 1: I = 2.0
         ];
 
         let result = assembler.assemble(&stamps, &currents, 2, 2).unwrap();
@@ -969,11 +1004,19 @@ mod tests {
 
         // Sweep 0
         assert!((result[0] - 1.0).abs() < 1e-6, "result[0] = {}", result[0]);
-        assert!((result[1] - (-1.0)).abs() < 1e-6, "result[1] = {}", result[1]);
+        assert!(
+            (result[1] - (-1.0)).abs() < 1e-6,
+            "result[1] = {}",
+            result[1]
+        );
 
         // Sweep 1
         assert!((result[2] - 2.0).abs() < 1e-6, "result[2] = {}", result[2]);
-        assert!((result[3] - (-2.0)).abs() < 1e-6, "result[3] = {}", result[3]);
+        assert!(
+            (result[3] - (-2.0)).abs() < 1e-6,
+            "result[3] = {}",
+            result[3]
+        );
     }
 
     #[test]
@@ -1027,7 +1070,11 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         // Should be sum of both currents
-        assert!((result[0] - 3.0).abs() < 1e-6, "result[0] = {} (expected 3.0)", result[0]);
+        assert!(
+            (result[0] - 3.0).abs() < 1e-6,
+            "result[0] = {} (expected 3.0)",
+            result[0]
+        );
     }
 
     #[test]
@@ -1049,12 +1096,7 @@ mod tests {
 
         // Create stamps with varying node connections
         let stamps: Vec<CurrentStamp> = (0..num_devices)
-            .map(|i| {
-                CurrentStamp::new(
-                    (i % rhs_size) as u32,
-                    ((i + 1) % rhs_size) as u32,
-                )
-            })
+            .map(|i| CurrentStamp::new((i % rhs_size) as u32, ((i + 1) % rhs_size) as u32))
             .collect();
 
         let currents: Vec<f32> = (0..num_devices * num_sweeps)
@@ -1062,7 +1104,9 @@ mod tests {
             .collect();
 
         let start = std::time::Instant::now();
-        let result = assembler.assemble(&stamps, &currents, num_sweeps, rhs_size).unwrap();
+        let result = assembler
+            .assemble(&stamps, &currents, num_sweeps, rhs_size)
+            .unwrap();
         let elapsed = start.elapsed();
 
         assert_eq!(result.len(), num_sweeps * rhs_size);

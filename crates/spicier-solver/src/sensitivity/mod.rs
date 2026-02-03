@@ -35,10 +35,12 @@
 //! }
 //! ```
 
+mod ac;
 mod config;
 mod dc;
-mod ac;
 
+pub use ac::{
+    AcSensitivityResult, AcSensitivityStamper, compute_ac_sensitivity, compute_ac_sensitivity_sweep,
+};
 pub use config::{SensitivityConfig, SensitivityOutput, SensitivityParam};
 pub use dc::{DcSensitivityResult, DcSensitivityStamper, compute_dc_sensitivity};
-pub use ac::{AcSensitivityResult, AcSensitivityStamper, compute_ac_sensitivity, compute_ac_sensitivity_sweep};

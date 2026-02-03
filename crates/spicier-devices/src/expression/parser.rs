@@ -291,9 +291,7 @@ impl<'a> ExprParser<'a> {
         // Check if identifier is a known parameter
         if let Some(params) = &self.param_names {
             if params.contains(&ident_upper) {
-                return Ok(Expr::Parameter {
-                    name: ident_upper,
-                });
+                return Ok(Expr::Parameter { name: ident_upper });
             }
         }
 

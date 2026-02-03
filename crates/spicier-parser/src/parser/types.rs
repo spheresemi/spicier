@@ -17,18 +17,13 @@ pub enum AcSweepType {
 }
 
 /// Type of DC sweep variable.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum DcSweepType {
     /// Sweep a voltage or current source value.
+    #[default]
     Source,
     /// Sweep a parameter value.
     Param,
-}
-
-impl Default for DcSweepType {
-    fn default() -> Self {
-        DcSweepType::Source
-    }
 }
 
 /// A single DC sweep specification.

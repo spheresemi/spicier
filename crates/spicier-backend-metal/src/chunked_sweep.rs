@@ -218,7 +218,7 @@ impl ChunkedSweepExecutor {
     {
         let start_time = std::time::Instant::now();
         let chunk_size = self.calculate_chunk_size(num_sweeps, nnz, num_nodes);
-        let num_chunks = (num_sweeps + chunk_size - 1) / chunk_size;
+        let num_chunks = num_sweeps.div_ceil(chunk_size);
 
         // Pre-warm buffer pool if configured
         if self.config.prewarm_pool && num_chunks > 1 {
@@ -283,9 +283,9 @@ impl ChunkedSweepExecutor {
             | wgpu::BufferUsages::COPY_DST;
 
         self.buffer_pool.prewarm(&[
-            (csr_size, storage_usage, 1),  // CSR values
-            (rhs_size, storage_usage, 1),  // RHS vector
-            (sol_size, storage_usage, 2),  // Solutions and prev_solutions
+            (csr_size, storage_usage, 1), // CSR values
+            (rhs_size, storage_usage, 1), // RHS vector
+            (sol_size, storage_usage, 2), // Solutions and prev_solutions
         ]);
     }
 

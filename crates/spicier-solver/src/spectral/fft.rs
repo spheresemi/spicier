@@ -167,6 +167,7 @@ fn next_power_of_2(n: usize) -> usize {
 ///
 /// # Returns
 /// Spectral result with frequencies, magnitudes, phases, and PSD.
+#[allow(clippy::needless_range_loop)]
 pub fn compute_fft(
     waveform: &TransientResult,
     node_idx: usize,
@@ -197,10 +198,7 @@ pub fn compute_fft(
     let coherent_gain = config.window.coherent_gain(windowed.len());
 
     // Prepare FFT input (zero-pad if needed)
-    let mut fft_input: Vec<Complex<f64>> = windowed
-        .iter()
-        .map(|&x| Complex::new(x, 0.0))
-        .collect();
+    let mut fft_input: Vec<Complex<f64>> = windowed.iter().map(|&x| Complex::new(x, 0.0)).collect();
 
     if config.zero_padding && fft_input.len() < fft_size {
         fft_input.resize(fft_size, Complex::new(0.0, 0.0));
@@ -277,6 +275,7 @@ pub fn compute_fft(
 /// * `samples` - Uniformly sampled signal
 /// * `sample_rate` - Sample rate in Hz
 /// * `config` - Spectral analysis configuration
+#[allow(clippy::needless_range_loop)]
 pub fn compute_fft_from_samples(
     samples: &[f64],
     sample_rate: f64,
@@ -303,10 +302,7 @@ pub fn compute_fft_from_samples(
     let coherent_gain = config.window.coherent_gain(windowed.len());
 
     // Prepare FFT input
-    let mut fft_input: Vec<Complex<f64>> = windowed
-        .iter()
-        .map(|&x| Complex::new(x, 0.0))
-        .collect();
+    let mut fft_input: Vec<Complex<f64>> = windowed.iter().map(|&x| Complex::new(x, 0.0)).collect();
 
     if config.zero_padding && fft_input.len() < fft_size {
         fft_input.resize(fft_size, Complex::new(0.0, 0.0));

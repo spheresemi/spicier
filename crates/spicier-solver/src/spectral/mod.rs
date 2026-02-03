@@ -35,6 +35,8 @@ mod fft;
 mod thd;
 mod window;
 
-pub use fft::{SpectralConfig, SpectralResult, compute_fft, compute_fft_from_samples, resample_uniform};
+pub use fft::{
+    SpectralConfig, SpectralResult, compute_fft, compute_fft_from_samples, resample_uniform,
+};
 pub use thd::{HarmonicInfo, ThdResult, compute_thd, compute_thd_from_samples};
 pub use window::WindowFunction;

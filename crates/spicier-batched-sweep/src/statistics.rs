@@ -197,9 +197,8 @@ pub fn compute_all_statistics(
     n: usize,
     batch_size: usize,
 ) -> Vec<SweepStatistics> {
-    let mut accumulators: Vec<StatisticsAccumulator> = (0..n)
-        .map(|_| StatisticsAccumulator::new())
-        .collect();
+    let mut accumulators: Vec<StatisticsAccumulator> =
+        (0..n).map(|_| StatisticsAccumulator::new()).collect();
 
     for i in 0..batch_size {
         let base = i * n;
@@ -367,7 +366,12 @@ impl YieldSpec {
     }
 
     /// Count passing and failing points.
-    pub fn count_pass_fail(&self, solutions: &[f64], n: usize, batch_size: usize) -> (usize, usize) {
+    pub fn count_pass_fail(
+        &self,
+        solutions: &[f64],
+        n: usize,
+        batch_size: usize,
+    ) -> (usize, usize) {
         let mut pass_count = 0;
         for i in 0..batch_size {
             let value = solutions[i * n + self.node_idx];
@@ -394,7 +398,9 @@ impl YieldAnalysis {
 
     /// Check if all specifications pass for a single point.
     pub fn all_pass(&self, solution: &[f64]) -> bool {
-        self.specs.iter().all(|spec| spec.passes(solution[spec.node_idx]))
+        self.specs
+            .iter()
+            .all(|spec| spec.passes(solution[spec.node_idx]))
     }
 
     /// Compute overall yield (all specs must pass).
@@ -477,7 +483,9 @@ impl StreamingStatistics {
     /// * `num_nodes` - Number of nodes per solution vector
     pub fn new(num_nodes: usize) -> Self {
         Self {
-            accumulators: (0..num_nodes).map(|_| StatisticsAccumulator::new()).collect(),
+            accumulators: (0..num_nodes)
+                .map(|_| StatisticsAccumulator::new())
+                .collect(),
             num_nodes,
             total_samples: 0,
         }
@@ -807,9 +815,9 @@ mod tests {
         // Node 0: [1.0, 2.0, 3.0]
         // Node 1: [10.0, 20.0, 30.0]
         let solutions = vec![
-            1.0, 10.0,  // Point 0
-            2.0, 20.0,  // Point 1
-            3.0, 30.0,  // Point 2
+            1.0, 10.0, // Point 0
+            2.0, 20.0, // Point 1
+            3.0, 30.0, // Point 2
         ];
 
         let stats0 = compute_statistics(&solutions, 2, 3, 0);
@@ -823,11 +831,7 @@ mod tests {
 
     #[test]
     fn test_compute_all_statistics() {
-        let solutions = vec![
-            1.0, 10.0,
-            2.0, 20.0,
-            3.0, 30.0,
-        ];
+        let solutions = vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0];
 
         let all_stats = compute_all_statistics(&solutions, 2, 3);
         assert_eq!(all_stats.len(), 2);
@@ -847,13 +851,7 @@ mod tests {
 
     #[test]
     fn test_histogram_from_sweep() {
-        let solutions = vec![
-            1.0, 0.0,
-            2.0, 0.0,
-            3.0, 0.0,
-            4.0, 0.0,
-            5.0, 0.0,
-        ];
+        let solutions = vec![1.0, 0.0, 2.0, 0.0, 3.0, 0.0, 4.0, 0.0, 5.0, 0.0];
 
         let hist = Histogram::from_sweep(&solutions, 2, 5, 0, 4);
         assert_eq!(hist.total_count, 5);
@@ -873,13 +871,7 @@ mod tests {
     #[test]
     fn test_yield_computation() {
         // Node 0 values: [1.0, 2.0, 3.0, 4.0, 5.0]
-        let solutions = vec![
-            1.0, 0.0,
-            2.0, 0.0,
-            3.0, 0.0,
-            4.0, 0.0,
-            5.0, 0.0,
-        ];
+        let solutions = vec![1.0, 0.0, 2.0, 0.0, 3.0, 0.0, 4.0, 0.0, 5.0, 0.0];
 
         // Spec: node 0 must be in [1.5, 3.5]
         // Passes: 2.0, 3.0 (2 out of 5 = 40%)
@@ -895,33 +887,25 @@ mod tests {
     #[test]
     fn test_yield_analysis_multiple_specs() {
         // Node 0: [1, 2, 3], Node 1: [10, 20, 30]
-        let solutions = vec![
-            1.0, 10.0,
-            2.0, 20.0,
-            3.0, 30.0,
-        ];
+        let solutions = vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0];
 
         let analysis = YieldAnalysis::new(vec![
-            YieldSpec::new(0, 1.5, 2.5),  // Passes: 2.0 only
+            YieldSpec::new(0, 1.5, 2.5),   // Passes: 2.0 only
             YieldSpec::new(1, 15.0, 25.0), // Passes: 20.0 only
         ]);
 
         // Only point 1 (2.0, 20.0) passes both
         let yield_pct = analysis.compute_yield(&solutions, 2, 3);
-        assert!((yield_pct - 1.0/3.0).abs() < 1e-10);
+        assert!((yield_pct - 1.0 / 3.0).abs() < 1e-10);
 
         let individual = analysis.individual_yields(&solutions, 2, 3);
-        assert!((individual[0] - 1.0/3.0).abs() < 1e-10); // Node 0
-        assert!((individual[1] - 1.0/3.0).abs() < 1e-10); // Node 1
+        assert!((individual[0] - 1.0 / 3.0).abs() < 1e-10); // Node 0
+        assert!((individual[1] - 1.0 / 3.0).abs() < 1e-10); // Node 1
     }
 
     #[test]
     fn test_sweep_summary() {
-        let solutions = vec![
-            1.0, 10.0,
-            2.0, 20.0,
-            3.0, 30.0,
-        ];
+        let solutions = vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0];
 
         let analysis = YieldAnalysis::new(vec![
             YieldSpec::new(0, 0.0, 5.0), // All pass
@@ -963,9 +947,9 @@ mod tests {
     fn test_streaming_statistics_single_chunk() {
         // 3 sweep points, 2 nodes each
         let solutions = vec![
-            1.0, 10.0,  // Point 0
-            2.0, 20.0,  // Point 1
-            3.0, 30.0,  // Point 2
+            1.0, 10.0, // Point 0
+            2.0, 20.0, // Point 1
+            3.0, 30.0, // Point 2
         ];
 
         let mut streaming = StreamingStatistics::new(2);
@@ -987,15 +971,15 @@ mod tests {
 
         // First chunk: 2 points
         let chunk1 = vec![
-            1.0, 10.0,  // Point 0
-            2.0, 20.0,  // Point 1
+            1.0, 10.0, // Point 0
+            2.0, 20.0, // Point 1
         ];
         streaming.process_chunk(&chunk1, 2);
 
         // Second chunk: 2 points
         let chunk2 = vec![
-            3.0, 30.0,  // Point 2
-            4.0, 40.0,  // Point 3
+            3.0, 30.0, // Point 2
+            4.0, 40.0, // Point 3
         ];
         streaming.process_chunk(&chunk2, 2);
 
@@ -1012,11 +996,7 @@ mod tests {
     fn test_streaming_statistics_f32() {
         let mut streaming = StreamingStatistics::new(2);
 
-        let chunk: Vec<f32> = vec![
-            1.0, 10.0,
-            2.0, 20.0,
-            3.0, 30.0,
-        ];
+        let chunk: Vec<f32> = vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0];
         streaming.process_chunk_f32(&chunk, 3);
 
         let stats = streaming.finalize();
@@ -1062,13 +1042,7 @@ mod tests {
     #[test]
     fn test_streaming_statistics_matches_batch() {
         // Compare streaming to batch computation
-        let solutions = vec![
-            1.0, 10.0,
-            2.0, 20.0,
-            3.0, 30.0,
-            4.0, 40.0,
-            5.0, 50.0,
-        ];
+        let solutions = vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0, 4.0, 40.0, 5.0, 50.0];
 
         // Batch computation
         let batch_stats = compute_all_statistics(&solutions, 2, 5);
@@ -1083,19 +1057,23 @@ mod tests {
         for i in 0..2 {
             assert!(
                 (batch_stats[i].mean - streaming_stats[i].mean).abs() < 1e-10,
-                "mean mismatch for node {}", i
+                "mean mismatch for node {}",
+                i
             );
             assert!(
                 (batch_stats[i].min - streaming_stats[i].min).abs() < 1e-10,
-                "min mismatch for node {}", i
+                "min mismatch for node {}",
+                i
             );
             assert!(
                 (batch_stats[i].max - streaming_stats[i].max).abs() < 1e-10,
-                "max mismatch for node {}", i
+                "max mismatch for node {}",
+                i
             );
             assert!(
                 (batch_stats[i].variance - streaming_stats[i].variance).abs() < 1e-10,
-                "variance mismatch for node {}", i
+                "variance mismatch for node {}",
+                i
             );
         }
     }

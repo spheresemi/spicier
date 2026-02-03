@@ -56,6 +56,7 @@ impl MutualInductance {
     }
 
     /// Create with resolved branch indices and inductance values.
+    #[allow(clippy::too_many_arguments)]
     pub fn with_resolved(
         name: impl Into<String>,
         inductor1_name: impl Into<String>,
@@ -173,18 +174,13 @@ mod tests {
     #[test]
     fn test_mutual_inductance_calculation() {
         let k = MutualInductance::with_resolved(
-            "K1", "L1", "L2", 0.9,
-            0, 1,  // Branch indices
-            1e-3, 1e-3,  // 1mH each
+            "K1", "L1", "L2", 0.9, 0, 1, // Branch indices
+            1e-3, 1e-3, // 1mH each
         );
 
         // M = k * sqrt(L1 * L2) = 0.9 * sqrt(1e-3 * 1e-3) = 0.9e-3 = 0.9 mH
         let m = k.mutual_inductance();
-        assert!(
-            (m - 0.9e-3).abs() < 1e-10,
-            "M = {} (expected 0.9e-3)",
-            m
-        );
+        assert!((m - 0.9e-3).abs() < 1e-10, "M = {} (expected 0.9e-3)", m);
     }
 
     #[test]
@@ -214,11 +210,7 @@ mod tests {
 
     #[test]
     fn test_resolved_ac_info() {
-        let k = MutualInductance::with_resolved(
-            "K1", "L1", "L2", 0.9,
-            0, 1,
-            1e-3, 1e-3,
-        );
+        let k = MutualInductance::with_resolved("K1", "L1", "L2", 0.9, 0, 1, 1e-3, 1e-3);
 
         assert!(k.is_resolved());
 
@@ -253,18 +245,13 @@ mod tests {
     #[test]
     fn test_different_inductance_values() {
         let k = MutualInductance::with_resolved(
-            "K1", "L1", "L2", 1.0,  // Perfect coupling
-            0, 1,
-            1e-3, 4e-3,  // L1=1mH, L2=4mH
+            "K1", "L1", "L2", 1.0, // Perfect coupling
+            0, 1, 1e-3, 4e-3, // L1=1mH, L2=4mH
         );
 
         // M = 1.0 * sqrt(1e-3 * 4e-3) = 1.0 * 2e-3 = 2mH
         let m = k.mutual_inductance();
-        assert!(
-            (m - 2e-3).abs() < 1e-10,
-            "M = {} (expected 2e-3)",
-            m
-        );
+        assert!((m - 2e-3).abs() < 1e-10, "M = {} (expected 2e-3)", m);
     }
 
     #[test]
@@ -275,11 +262,7 @@ mod tests {
 
     #[test]
     fn test_transient_info() {
-        let k = MutualInductance::with_resolved(
-            "K1", "L1", "L2", 0.9,
-            0, 1,
-            1e-3, 1e-3,
-        );
+        let k = MutualInductance::with_resolved("K1", "L1", "L2", 0.9, 0, 1, 1e-3, 1e-3);
 
         let info = k.transient_info();
         match info {

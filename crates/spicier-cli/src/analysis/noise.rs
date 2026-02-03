@@ -5,12 +5,12 @@ use num_complex::Complex;
 use std::collections::HashMap;
 
 use nalgebra::DVector;
-use spicier_core::netlist::AcDeviceInfo;
 use spicier_core::NodeId;
+use spicier_core::netlist::AcDeviceInfo;
 use spicier_parser::AcSweepType;
 use spicier_solver::{
-    ComplexMna, DcSolution, NoiseConfig, NoiseSource, NoiseStamper, NoiseSweepType,
-    compute_noise, ConvergenceCriteria, solve_newton_raphson,
+    ComplexMna, ConvergenceCriteria, DcSolution, NoiseConfig, NoiseSource, NoiseStamper,
+    NoiseSweepType, compute_noise, solve_newton_raphson,
 };
 
 use crate::stampers::NetlistNonlinearStamper;
@@ -40,19 +40,22 @@ impl<'a> NoiseStamper for NetlistNoiseStamper<'a> {
             let name = device.device_name();
 
             match ac_info {
-                AcDeviceInfo::Resistor { node_pos, node_neg, conductance } => {
+                AcDeviceInfo::Resistor {
+                    node_pos,
+                    node_neg,
+                    conductance,
+                } => {
                     // Thermal noise from resistor
                     if conductance > 0.0 {
                         let resistance = 1.0 / conductance;
-                        sources.push(NoiseSource::thermal(
-                            name,
-                            node_pos,
-                            node_neg,
-                            resistance,
-                        ));
+                        sources.push(NoiseSource::thermal(name, node_pos, node_neg, resistance));
                     }
                 }
-                AcDeviceInfo::Diode { node_pos, node_neg, gd } => {
+                AcDeviceInfo::Diode {
+                    node_pos,
+                    node_neg,
+                    gd,
+                } => {
                     // Shot noise from diode
                     // The diode current can be estimated from gd ≈ Id/Vt
                     // where Vt ≈ 26mV at room temperature
@@ -67,7 +70,9 @@ impl<'a> NoiseStamper for NetlistNoiseStamper<'a> {
                         ));
                     }
                 }
-                AcDeviceInfo::Mosfet { drain, source, gds, .. } => {
+                AcDeviceInfo::Mosfet {
+                    drain, source, gds, ..
+                } => {
                     // MOSFET thermal noise from channel (simplified)
                     // For simplicity, model as equivalent resistance Req = 1/gds
                     if gds > 0.0 {
@@ -79,7 +84,9 @@ impl<'a> NoiseStamper for NetlistNoiseStamper<'a> {
                         ));
                     }
                 }
-                AcDeviceInfo::Jfet { drain, source, gds, .. } => {
+                AcDeviceInfo::Jfet {
+                    drain, source, gds, ..
+                } => {
                     // JFET thermal noise from channel
                     if gds > 0.0 {
                         sources.push(NoiseSource::thermal(
@@ -90,7 +97,14 @@ impl<'a> NoiseStamper for NetlistNoiseStamper<'a> {
                         ));
                     }
                 }
-                AcDeviceInfo::Bjt { collector, base, emitter, gm, gpi, .. } => {
+                AcDeviceInfo::Bjt {
+                    collector,
+                    base,
+                    emitter,
+                    gm,
+                    gpi,
+                    ..
+                } => {
                     // BJT shot noise from base and collector currents
                     // Ic ≈ gm * Vt, Ib ≈ gpi * Vt (rough estimate)
                     let vt: f64 = 0.026;
@@ -106,15 +120,12 @@ impl<'a> NoiseStamper for NetlistNoiseStamper<'a> {
                         ));
                     }
                     if ib.abs() > 1e-15 {
-                        sources.push(NoiseSource::shot(
-                            format!("{}_ib", name),
-                            base,
-                            emitter,
-                            ib,
-                        ));
+                        sources.push(NoiseSource::shot(format!("{}_ib", name), base, emitter, ib));
                     }
                 }
-                AcDeviceInfo::Bsim3Mosfet { drain, source, gds, .. } => {
+                AcDeviceInfo::Bsim3Mosfet {
+                    drain, source, gds, ..
+                } => {
                     // BSIM3 MOSFET thermal noise from channel
                     // Similar to Level 1 MOSFET, model as equivalent resistance Req = 1/gds
                     if gds > 0.0 {
@@ -153,11 +164,8 @@ impl<'a> NoiseStamper for NetlistNoiseStamper<'a> {
         self.stamp_ac(&mut mna, omega);
 
         // Solve AC system
-        let solution = spicier_solver::linear::solve_sparse_complex(
-            mna.size(),
-            &mna.triplets,
-            mna.rhs(),
-        )?;
+        let solution =
+            spicier_solver::linear::solve_sparse_complex(mna.size(), &mna.triplets, mna.rhs())?;
 
         let v_out = if let Some(ref_node) = output_ref_node {
             solution[output_node] - solution[ref_node]
@@ -173,36 +181,86 @@ impl<'a> NoiseStamper for NetlistNoiseStamper<'a> {
 /// Stamp a device into the complex AC MNA system.
 fn stamp_ac_device(mna: &mut ComplexMna, info: &AcDeviceInfo, omega: f64) {
     match info {
-        AcDeviceInfo::Resistor { node_pos, node_neg, conductance } => {
+        AcDeviceInfo::Resistor {
+            node_pos,
+            node_neg,
+            conductance,
+        } => {
             mna.stamp_conductance(*node_pos, *node_neg, *conductance);
         }
-        AcDeviceInfo::Capacitor { node_pos, node_neg, capacitance } => {
+        AcDeviceInfo::Capacitor {
+            node_pos,
+            node_neg,
+            capacitance,
+        } => {
             let yc = Complex::new(0.0, omega * capacitance);
             mna.stamp_admittance(*node_pos, *node_neg, yc);
         }
-        AcDeviceInfo::Inductor { node_pos, node_neg, inductance, branch_idx } => {
+        AcDeviceInfo::Inductor {
+            node_pos,
+            node_neg,
+            inductance,
+            branch_idx,
+        } => {
             mna.stamp_inductor(*node_pos, *node_neg, *branch_idx, omega, *inductance);
         }
-        AcDeviceInfo::VoltageSource { node_pos, node_neg, branch_idx, ac_mag } => {
-            mna.stamp_voltage_source(*node_pos, *node_neg, *branch_idx, Complex::new(*ac_mag, 0.0));
+        AcDeviceInfo::VoltageSource {
+            node_pos,
+            node_neg,
+            branch_idx,
+            ac_mag,
+        } => {
+            mna.stamp_voltage_source(
+                *node_pos,
+                *node_neg,
+                *branch_idx,
+                Complex::new(*ac_mag, 0.0),
+            );
         }
-        AcDeviceInfo::CurrentSource { node_pos, node_neg, ac_mag } => {
+        AcDeviceInfo::CurrentSource {
+            node_pos,
+            node_neg,
+            ac_mag,
+        } => {
             mna.stamp_current_source(*node_pos, *node_neg, Complex::new(*ac_mag, 0.0));
         }
-        AcDeviceInfo::Diode { node_pos, node_neg, gd } => {
+        AcDeviceInfo::Diode {
+            node_pos,
+            node_neg,
+            gd,
+        } => {
             mna.stamp_conductance(*node_pos, *node_neg, *gd);
         }
-        AcDeviceInfo::Mosfet { drain, gate, source, gds, gm } => {
+        AcDeviceInfo::Mosfet {
+            drain,
+            gate,
+            source,
+            gds,
+            gm,
+        } => {
             // Stamp output conductance gds between drain and source
             mna.stamp_conductance(*drain, *source, *gds);
             // Stamp transconductance gm as VCCS from gate-source to drain-source
             mna.stamp_vccs(*drain, *source, *gate, *source, *gm);
         }
-        AcDeviceInfo::Jfet { drain, gate, source, gds, gm } => {
+        AcDeviceInfo::Jfet {
+            drain,
+            gate,
+            source,
+            gds,
+            gm,
+        } => {
             mna.stamp_conductance(*drain, *source, *gds);
             mna.stamp_vccs(*drain, *source, *gate, *source, *gm);
         }
-        AcDeviceInfo::Bjt { collector, base, emitter, gm, go, gpi } => {
+        AcDeviceInfo::Bjt {
+            collector,
+            base,
+            emitter,
+            gm,
+            go,
+            gpi,
+        } => {
             // Input conductance gpi between base and emitter
             mna.stamp_conductance(*base, *emitter, *gpi);
             // Output conductance go between collector and emitter
@@ -211,18 +269,19 @@ fn stamp_ac_device(mna: &mut ComplexMna, info: &AcDeviceInfo, omega: f64) {
             mna.stamp_vccs(*collector, *emitter, *base, *emitter, *gm);
         }
         // Skip controlled sources and mutual inductance for now (they don't contribute noise)
-        AcDeviceInfo::Vcvs { .. } |
-        AcDeviceInfo::Vccs { .. } |
-        AcDeviceInfo::Cccs { .. } |
-        AcDeviceInfo::Ccvs { .. } |
-        AcDeviceInfo::MutualInductance { .. } |
-        AcDeviceInfo::None => {}
+        AcDeviceInfo::Vcvs { .. }
+        | AcDeviceInfo::Vccs { .. }
+        | AcDeviceInfo::Cccs { .. }
+        | AcDeviceInfo::Ccvs { .. }
+        | AcDeviceInfo::MutualInductance { .. }
+        | AcDeviceInfo::None => {}
         // Handle any future variants (non-exhaustive enum)
         _ => {}
     }
 }
 
 /// Run noise analysis.
+#[allow(clippy::too_many_arguments)]
 pub fn run_noise_analysis(
     netlist: &spicier_core::Netlist,
     output_node: &str,
@@ -237,7 +296,9 @@ pub fn run_noise_analysis(
     println!(
         "Noise Analysis (.NOISE V({}{}) {} {} {} {} {})",
         output_node,
-        output_ref_node.map(|r| format!(",{}", r)).unwrap_or_default(),
+        output_ref_node
+            .map(|r| format!(",{}", r))
+            .unwrap_or_default(),
         input_source,
         match sweep_type {
             AcSweepType::Dec => "DEC",
@@ -279,8 +340,7 @@ pub fn run_noise_analysis(
         }
     } else {
         let mna = netlist.assemble_mna();
-        spicier_solver::solve_dc(&mna)
-            .map_err(|e| anyhow::anyhow!("DC solver error: {}", e))?
+        spicier_solver::solve_dc(&mna).map_err(|e| anyhow::anyhow!("DC solver error: {}", e))?
     };
 
     // Look up node indices (try original case first, then uppercase for compatibility)
@@ -379,11 +439,14 @@ pub fn run_noise_analysis(
     println!("{}", "-".repeat(50));
 
     // Find the index closest to mid frequency
-    let mid_idx = result.frequencies
+    let mid_idx = result
+        .frequencies
         .iter()
         .enumerate()
         .min_by(|(_, a), (_, b)| {
-            ((*a - mid_freq).abs()).partial_cmp(&((*b - mid_freq).abs())).unwrap()
+            ((*a - mid_freq).abs())
+                .partial_cmp(&((*b - mid_freq).abs()))
+                .unwrap()
         })
         .map(|(i, _)| i)
         .unwrap_or(0);
@@ -399,10 +462,7 @@ pub fn run_noise_analysis(
     for contrib in sorted_contribs.iter().take(10) {
         let percent = contrib.contribution_percent[mid_idx];
         if percent > 0.01 {
-            println!(
-                "  {:<20} {:>6.2}%",
-                contrib.source_name, percent
-            );
+            println!("  {:<20} {:>6.2}%", contrib.source_name, percent);
         }
     }
 
@@ -410,7 +470,10 @@ pub fn run_noise_analysis(
 
     // Compute integrated noise over the frequency range
     let integrated = result.integrated_noise(fstart, fstop);
-    println!("Integrated Output Noise ({:.0} Hz - {:.0} Hz): {:.4e} V RMS", fstart, fstop, integrated);
+    println!(
+        "Integrated Output Noise ({:.0} Hz - {:.0} Hz): {:.4e} V RMS",
+        fstart, fstop, integrated
+    );
     println!();
     println!("Noise analysis complete.");
     println!();

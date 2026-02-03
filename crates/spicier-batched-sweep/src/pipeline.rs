@@ -201,7 +201,7 @@ impl<'a> PipelinedSweep<'a> {
     ) -> Result<PipelinedSweepResult> {
         let total_count = points.len();
         let chunk_size = self.config.chunk_size;
-        let num_chunks = (total_count + chunk_size - 1) / chunk_size;
+        let num_chunks = total_count.div_ceil(chunk_size);
 
         // Pre-allocate solution storage
         let mut all_solutions: Vec<Option<DVector<f64>>> = vec![None; total_count];

@@ -42,7 +42,12 @@ impl BatchedCsrMatrix {
     /// Create a new CSR matrix structure.
     pub fn new(n: usize, row_ptr: Vec<u32>, col_idx: Vec<u32>) -> Self {
         let nnz = col_idx.len();
-        Self { n, nnz, row_ptr, col_idx }
+        Self {
+            n,
+            nnz,
+            row_ptr,
+            col_idx,
+        }
     }
 }
 
@@ -59,10 +64,12 @@ pub struct GpuBatchedSpmv {
 impl GpuBatchedSpmv {
     /// Create a new batched SpMV kernel.
     pub fn new(ctx: Arc<WgpuContext>) -> Result<Self> {
-        let shader = ctx.device().create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Batched SpMV Shader"),
-            source: wgpu::ShaderSource::Wgsl(BATCHED_SPMV_SHADER.into()),
-        });
+        let shader = ctx
+            .device()
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Batched SpMV Shader"),
+                source: wgpu::ShaderSource::Wgsl(BATCHED_SPMV_SHADER.into()),
+            });
 
         let bind_group_layout =
             ctx.device()
@@ -184,13 +191,17 @@ impl GpuBatchedSpmv {
         if values.len() != num_sweeps * csr.nnz {
             return Err(WgpuError::InvalidDimension(format!(
                 "values length {} != num_sweeps {} × nnz {}",
-                values.len(), num_sweeps, csr.nnz
+                values.len(),
+                num_sweeps,
+                csr.nnz
             )));
         }
         if x.len() != num_sweeps * csr.n {
             return Err(WgpuError::InvalidDimension(format!(
                 "x length {} != num_sweeps {} × n {}",
-                x.len(), num_sweeps, csr.n
+                x.len(),
+                num_sweeps,
+                csr.n
             )));
         }
 
@@ -210,41 +221,41 @@ impl GpuBatchedSpmv {
             _pad: 0,
         };
 
-        let uniform_buffer = self
-            .ctx
-            .device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("SpMV Uniforms"),
-                contents: bytemuck::bytes_of(&uniforms),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
+        let uniform_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("SpMV Uniforms"),
+                    contents: bytemuck::bytes_of(&uniforms),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
 
-        let row_ptr_buffer = self
-            .ctx
-            .device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("CSR row_ptr"),
-                contents: bytemuck::cast_slice(&csr.row_ptr),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
+        let row_ptr_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("CSR row_ptr"),
+                    contents: bytemuck::cast_slice(&csr.row_ptr),
+                    usage: wgpu::BufferUsages::STORAGE,
+                });
 
-        let col_idx_buffer = self
-            .ctx
-            .device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("CSR col_idx"),
-                contents: bytemuck::cast_slice(&csr.col_idx),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
+        let col_idx_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("CSR col_idx"),
+                    contents: bytemuck::cast_slice(&csr.col_idx),
+                    usage: wgpu::BufferUsages::STORAGE,
+                });
 
-        let values_buffer = self
-            .ctx
-            .device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("CSR values"),
-                contents: bytemuck::cast_slice(values),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
+        let values_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("CSR values"),
+                    contents: bytemuck::cast_slice(values),
+                    usage: wgpu::BufferUsages::STORAGE,
+                });
 
         let x_buffer = self
             .ctx
@@ -304,12 +315,12 @@ impl GpuBatchedSpmv {
                 ],
             });
 
-        let mut encoder = self
-            .ctx
-            .device()
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("SpMV Encoder"),
-            });
+        let mut encoder =
+            self.ctx
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("SpMV Encoder"),
+                });
 
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -321,7 +332,7 @@ impl GpuBatchedSpmv {
 
             // Dispatch: one thread per (row, sweep) pair
             let total_work = (csr.n * num_sweeps) as u32;
-            let workgroups = (total_work + 255) / 256;
+            let workgroups = total_work.div_ceil(256);
             pass.dispatch_workgroups(workgroups, 1, 1);
         }
 
@@ -424,8 +435,8 @@ mod tests {
         // [0, 1]
         let csr = BatchedCsrMatrix::new(
             2,
-            vec![0, 1, 2],  // row_ptr
-            vec![0, 1],     // col_idx (diagonals)
+            vec![0, 1, 2], // row_ptr
+            vec![0, 1],    // col_idx (diagonals)
         );
 
         // Single sweep with identity values
@@ -456,8 +467,8 @@ mod tests {
         // [3, 4]
         let csr = BatchedCsrMatrix::new(
             2,
-            vec![0, 2, 4],        // row_ptr
-            vec![0, 1, 0, 1],    // col_idx
+            vec![0, 2, 4],    // row_ptr
+            vec![0, 1, 0, 1], // col_idx
         );
 
         let values = vec![1.0, 2.0, 3.0, 4.0];
@@ -484,20 +495,16 @@ mod tests {
         let spmv = GpuBatchedSpmv::new(ctx).unwrap();
 
         // 2×2 diagonal matrix
-        let csr = BatchedCsrMatrix::new(
-            2,
-            vec![0, 1, 2],
-            vec![0, 1],
-        );
+        let csr = BatchedCsrMatrix::new(2, vec![0, 1, 2], vec![0, 1]);
 
         // Two sweeps with different diagonal values
         let values = vec![
-            2.0, 3.0,  // sweep 0: diag = [2, 3]
-            4.0, 5.0,  // sweep 1: diag = [4, 5]
+            2.0, 3.0, // sweep 0: diag = [2, 3]
+            4.0, 5.0, // sweep 1: diag = [4, 5]
         ];
         let x = vec![
-            1.0, 1.0,  // sweep 0: x = [1, 1]
-            1.0, 1.0,  // sweep 1: x = [1, 1]
+            1.0, 1.0, // sweep 0: x = [1, 1]
+            1.0, 1.0, // sweep 1: x = [1, 1]
         ];
 
         let y = spmv.multiply(&csr, &values, &x, 2).unwrap();
@@ -552,7 +559,10 @@ mod tests {
         let total_ops = num_sweeps * n * nnz_per_row * 2; // 2 ops per nnz (mul + add)
         println!(
             "GPU SpMV: {}×{} matrix, {} sweeps in {:?} ({:.2} GFLOPS)",
-            n, n, num_sweeps, elapsed,
+            n,
+            n,
+            num_sweeps,
+            elapsed,
             total_ops as f64 / elapsed.as_secs_f64() / 1e9
         );
     }

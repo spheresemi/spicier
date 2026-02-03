@@ -135,21 +135,12 @@ pub trait BatchedLuSolver: Send + Sync {
 }
 
 /// Selector for choosing the appropriate GPU backend.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct BackendSelector {
     /// Preferred backend type.
     pub preferred: Option<BackendType>,
     /// Configuration for batch operations.
     pub config: GpuBatchConfig,
-}
-
-impl Default for BackendSelector {
-    fn default() -> Self {
-        Self {
-            preferred: None,
-            config: GpuBatchConfig::default(),
-        }
-    }
 }
 
 impl BackendSelector {
@@ -383,7 +374,7 @@ impl BatchedLuSolver for CpuBatchedSolver {
                 }
                 None => {
                     // Singular matrix - use zeros
-                    solutions.extend(std::iter::repeat(0.0).take(n));
+                    solutions.extend(std::iter::repeat_n(0.0, n));
                     singular_indices.push(i);
                 }
             }

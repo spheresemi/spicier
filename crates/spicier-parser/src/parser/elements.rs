@@ -1,4 +1,4 @@
-//! Element parsing (R, C, L, V, I, D, M, J, Q, K, E, G, F, H, B).
+//! Element parsing (R, C, L, V, I, D, M, J, Q, K, E, G, F, H, B, T).
 
 use spicier_devices::behavioral::{BehavioralCurrentSource, BehavioralVoltageSource};
 use spicier_devices::bjt::{Bjt, BjtParams, BjtType};
@@ -6,10 +6,11 @@ use spicier_devices::controlled::{Cccs, Ccvs, Vccs, Vcvs};
 use spicier_devices::diode::{Diode, DiodeParams};
 use spicier_devices::expression::parse_expression;
 use spicier_devices::jfet::{Jfet, JfetParams, JfetType};
-use spicier_devices::mosfet::{Mosfet, MosfetParams, MosfetType};
+use spicier_devices::mosfet::{Bsim3Mosfet, Bsim3Params, Mosfet, MosfetParams, MosfetType};
 use spicier_devices::mutual::MutualInductance;
 use spicier_devices::passive::{Capacitor, Inductor, Resistor};
 use spicier_devices::sources::{CurrentSource, VoltageSource};
+use spicier_devices::tline::TransmissionLine;
 
 use crate::error::{Error, Result};
 use crate::lexer::Token;
@@ -47,6 +48,7 @@ impl<'a> Parser<'a> {
             'F' => self.parse_cccs(name, line),
             'H' => self.parse_ccvs(name, line),
             'B' => self.parse_behavioral(name, line),
+            'T' => self.parse_transmission_line(name, line),
             'X' => self.parse_subcircuit_instance(name, line),
             _ => {
                 // Unknown element - skip line
@@ -261,11 +263,18 @@ impl<'a> Parser<'a> {
         let node_drain = self.expect_node(line)?;
         let node_gate = self.expect_node(line)?;
         let node_source = self.expect_node(line)?;
-        let _node_bulk = self.expect_node(line)?; // bulk node (not used in Level 1)
+        let node_bulk = self.expect_node(line)?;
 
-        // Optional model name and W/L parameters
-        let mut mos_type = MosfetType::Nmos;
-        let mut params = MosfetParams::nmos_default();
+        /// Model type indicator for MOSFET parsing.
+        #[derive(Clone)]
+        #[allow(clippy::large_enum_variant)]
+        enum MosfetModel {
+            Level1(MosfetType, MosfetParams),
+            Bsim3(Bsim3Params),
+        }
+
+        // Default to Level 1 NMOS
+        let mut model = MosfetModel::Level1(MosfetType::Nmos, MosfetParams::nmos_default());
 
         // Try to read model name
         if let Token::Name(n) = self.peek() {
@@ -275,19 +284,27 @@ impl<'a> Parser<'a> {
                 self.advance();
                 match self.models.get(&model_name) {
                     Some(ModelDefinition::Nmos(mp)) => {
-                        mos_type = MosfetType::Nmos;
-                        params = mp.clone();
+                        model = MosfetModel::Level1(MosfetType::Nmos, mp.clone());
                     }
                     Some(ModelDefinition::Pmos(mp)) => {
-                        mos_type = MosfetType::Pmos;
-                        params = mp.clone();
+                        model = MosfetModel::Level1(MosfetType::Pmos, mp.clone());
+                    }
+                    Some(ModelDefinition::Nmos49(bp)) => {
+                        model = MosfetModel::Bsim3(bp.clone());
+                    }
+                    Some(ModelDefinition::Pmos49(bp)) => {
+                        model = MosfetModel::Bsim3(bp.clone());
                     }
                     _ => {}
                 }
             }
         }
 
-        // Parse optional W=val L=val parameters
+        // Parse optional W=val L=val NF=val parameters
+        let mut w_override: Option<f64> = None;
+        let mut l_override: Option<f64> = None;
+        let mut nf_override: Option<f64> = None;
+
         loop {
             match self.peek() {
                 Token::Eol | Token::Eof => break,
@@ -298,8 +315,9 @@ impl<'a> Parser<'a> {
                         self.advance();
                         if let Ok(val) = self.expect_value(line) {
                             match pname.as_str() {
-                                "W" => params.w = val,
-                                "L" => params.l = val,
+                                "W" => w_override = Some(val),
+                                "L" => l_override = Some(val),
+                                "NF" | "M" => nf_override = Some(val),
                                 _ => {}
                             }
                         }
@@ -311,9 +329,42 @@ impl<'a> Parser<'a> {
             }
         }
 
-        let mosfet =
-            Mosfet::with_params(name, node_drain, node_gate, node_source, mos_type, params);
-        self.netlist.add_device(mosfet);
+        // Create the appropriate device
+        match model {
+            MosfetModel::Level1(mos_type, mut params) => {
+                // Apply instance parameter overrides
+                if let Some(w) = w_override {
+                    params.w = w;
+                }
+                if let Some(l) = l_override {
+                    params.l = l;
+                }
+                let mosfet =
+                    Mosfet::with_params(name, node_drain, node_gate, node_source, mos_type, params);
+                self.netlist.add_device(mosfet);
+            }
+            MosfetModel::Bsim3(mut params) => {
+                // Apply instance parameter overrides
+                if let Some(w) = w_override {
+                    params.w = w;
+                }
+                if let Some(l) = l_override {
+                    params.l = l;
+                }
+                if let Some(nf) = nf_override {
+                    params.nf = nf;
+                }
+                let mosfet = Bsim3Mosfet::with_params(
+                    name,
+                    node_drain,
+                    node_gate,
+                    node_source,
+                    node_bulk,
+                    params,
+                );
+                self.netlist.add_device(mosfet);
+            }
+        }
 
         self.skip_to_eol();
         Ok(())
@@ -388,38 +439,104 @@ impl<'a> Parser<'a> {
             }
         }
 
-        let bjt =
-            Bjt::with_params(name, node_collector, node_base, node_emitter, bjt_type, params);
+        let bjt = Bjt::with_params(
+            name,
+            node_collector,
+            node_base,
+            node_emitter,
+            bjt_type,
+            params,
+        );
         self.netlist.add_device(bjt);
 
         self.skip_to_eol();
         Ok(())
     }
 
-    /// Parse K1 L1 L2 coupling_coefficient
+    /// Parse K1 L1 L2 [L3 ...] coupling_coefficient
+    ///
+    /// Supports multi-winding transformers with 2 or more inductors.
+    /// For N inductors, generates N*(N-1)/2 pairwise mutual inductance elements.
+    /// Example: K1 L1 L2 L3 0.9 creates K1_L1_L2, K1_L1_L3, K1_L2_L3
     fn parse_mutual_inductance(&mut self, name: &str, line: usize) -> Result<()> {
         self.advance(); // consume name
 
-        let l1_name = self.expect_name(line)?;
-        let l2_name = self.expect_name(line)?;
-        let coupling = self.expect_value(line)?;
-
-        // Create the mutual inductance element
-        // Note: The inductor branch indices and values will need to be resolved
-        // after all inductors are parsed. For now, we store the names.
-        let mut mutual = MutualInductance::new(name, &l1_name, &l2_name, coupling);
-
-        // Try to resolve the inductor references immediately if they exist
-        if let (Some(l1_idx), Some(l2_idx)) = (
-            self.netlist.find_vsource_branch_index(&l1_name),
-            self.netlist.find_vsource_branch_index(&l2_name),
-        ) {
-            // For now we set inductance values to 0; they'll be resolved during simulation
-            // A more complete implementation would look up the inductor values
-            mutual.resolve(l1_idx, l2_idx, 0.0, 0.0);
+        // Collect inductor names until we hit a number (the coupling coefficient)
+        let mut inductor_names = Vec::new();
+        loop {
+            match self.peek() {
+                Token::Name(n) => {
+                    // Check if it starts with L (inductor) - inductor names should start with L
+                    let upper = n.to_uppercase();
+                    if upper.starts_with('L') || inductor_names.is_empty() {
+                        inductor_names.push(n.to_string());
+                        self.advance();
+                    } else {
+                        // Not an inductor name, might be a model name or something else
+                        // Try to parse as value
+                        break;
+                    }
+                }
+                Token::Value(_) => {
+                    // This is the coupling coefficient
+                    break;
+                }
+                _ => break,
+            }
         }
 
-        self.netlist.add_device(mutual);
+        // Need at least 2 inductors
+        if inductor_names.len() < 2 {
+            return Err(Error::ParseError {
+                message: format!(
+                    "K element requires at least 2 inductors, got {}",
+                    inductor_names.len()
+                ),
+                line,
+            });
+        }
+
+        let coupling = self.expect_value(line)?;
+
+        // For 2 inductors, create a single mutual inductance (original behavior)
+        // For N > 2 inductors, create N*(N-1)/2 pairwise couplings
+        if inductor_names.len() == 2 {
+            let mut mutual =
+                MutualInductance::new(name, &inductor_names[0], &inductor_names[1], coupling);
+
+            // Try to resolve the inductor references immediately if they exist
+            if let (Some(l1_idx), Some(l2_idx)) = (
+                self.netlist.find_vsource_branch_index(&inductor_names[0]),
+                self.netlist.find_vsource_branch_index(&inductor_names[1]),
+            ) {
+                mutual.resolve(l1_idx, l2_idx, 0.0, 0.0);
+            }
+
+            self.netlist.add_device(mutual);
+        } else {
+            // Multi-winding: create pairwise couplings
+            for i in 0..inductor_names.len() {
+                for j in (i + 1)..inductor_names.len() {
+                    let pair_name = format!("{}_{}_{}", name, inductor_names[i], inductor_names[j]);
+                    let mut mutual = MutualInductance::new(
+                        &pair_name,
+                        &inductor_names[i],
+                        &inductor_names[j],
+                        coupling,
+                    );
+
+                    // Try to resolve immediately
+                    if let (Some(li_idx), Some(lj_idx)) = (
+                        self.netlist.find_vsource_branch_index(&inductor_names[i]),
+                        self.netlist.find_vsource_branch_index(&inductor_names[j]),
+                    ) {
+                        mutual.resolve(li_idx, lj_idx, 0.0, 0.0);
+                    }
+
+                    self.netlist.add_device(mutual);
+                }
+            }
+        }
 
         self.skip_to_eol();
         Ok(())
@@ -670,5 +787,113 @@ impl<'a> Parser<'a> {
             self.advance(); // skip DC keyword
         }
         self.expect_value(line)
+    }
+
+    /// Parse T1 port1+ port1- port2+ port2- Z0=val TD=val [NL=val]
+    fn parse_transmission_line(&mut self, name: &str, line: usize) -> Result<()> {
+        self.advance(); // consume name
+
+        let port1_pos = self.expect_node(line)?;
+        let port1_neg = self.expect_node(line)?;
+        let port2_pos = self.expect_node(line)?;
+        let port2_neg = self.expect_node(line)?;
+
+        let mut z0: Option<f64> = None;
+        let mut td: Option<f64> = None;
+        let mut nl: Option<usize> = None;
+
+        // Parse Z0=val TD=val NL=val parameters
+        loop {
+            match self.peek() {
+                Token::Eol | Token::Eof => break,
+                Token::Name(n) => {
+                    let pname = n.clone().to_uppercase();
+                    self.advance();
+                    if matches!(self.peek(), Token::Equals) {
+                        self.advance();
+                        if let Ok(val) = self.expect_value(line) {
+                            match pname.as_str() {
+                                "Z0" => z0 = Some(val),
+                                "TD" => td = Some(val),
+                                "NL" => nl = Some(val as usize),
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    self.advance();
+                }
+            }
+        }
+
+        let z0 = z0.ok_or_else(|| Error::ParseError {
+            line,
+            message: format!(
+                "Transmission line '{}' requires Z0 parameter (characteristic impedance)",
+                name
+            ),
+        })?;
+
+        let td = td.ok_or_else(|| Error::ParseError {
+            line,
+            message: format!(
+                "Transmission line '{}' requires TD parameter (propagation delay)",
+                name
+            ),
+        })?;
+
+        // Get current index base for the inductors
+        let current_base_index = self.next_current_index;
+
+        // Create the transmission line
+        let mut tline = if let Some(num_sections) = nl {
+            TransmissionLine::with_sections(
+                name,
+                port1_pos,
+                port1_neg,
+                port2_pos,
+                port2_neg,
+                z0,
+                td,
+                num_sections,
+                current_base_index,
+            )
+        } else {
+            TransmissionLine::new(
+                name,
+                port1_pos,
+                port1_neg,
+                port2_pos,
+                port2_neg,
+                z0,
+                td,
+                current_base_index,
+            )
+        };
+
+        // Update current index for the inductors
+        self.next_current_index += tline.num_inductors();
+
+        // Create internal nodes for the LC ladder
+        let num_internal = tline.num_internal_nodes();
+        if num_internal > 0 {
+            let mut internal_nodes = Vec::with_capacity(num_internal);
+            for _ in 0..num_internal {
+                // Generate unique internal node names
+                let internal_node = self.get_or_create_internal_node(&format!(
+                    "{}_int_{}",
+                    name,
+                    internal_nodes.len()
+                ));
+                internal_nodes.push(internal_node);
+            }
+            tline.set_internal_nodes(internal_nodes);
+        }
+
+        self.netlist.add_device(tline);
+
+        self.skip_to_eol();
+        Ok(())
     }
 }

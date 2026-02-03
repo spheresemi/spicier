@@ -80,6 +80,7 @@ impl BatchedNonlinearDevices {
     /// * `beta` - Transconductance parameter (kp * W / L)
     /// * `lambda` - Channel-length modulation
     /// * `node_drain/gate/source` - Node indices (None for ground)
+    #[allow(clippy::too_many_arguments)]
     pub fn add_mosfet(
         &mut self,
         is_nmos: bool,
@@ -776,6 +777,6 @@ mod tests {
         // Vgs = 2V, Vth = 0.7V, so MOSFET should be on
         // Drain voltage should be between 0 and 5V
         let vd = result.solution[2];
-        assert!(vd >= 0.0 && vd <= 5.0, "V(drain) = {} out of range", vd);
+        assert!((0.0..=5.0).contains(&vd), "V(drain) = {} out of range", vd);
     }
 }

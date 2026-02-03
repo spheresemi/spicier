@@ -223,7 +223,11 @@ mod tests {
     fn test_thermal_noise_1k_resistor() {
         // 1kΩ resistor at 300K should have ~4.07 nV/√Hz
         let vn = thermal_noise_voltage(1000.0, 300.0);
-        assert!((vn - 4.07e-9).abs() < 0.1e-9, "Expected ~4.07 nV/√Hz, got {}", vn);
+        assert!(
+            (vn - 4.07e-9).abs() < 0.1e-9,
+            "Expected ~4.07 nV/√Hz, got {}",
+            vn
+        );
     }
 
     #[test]
@@ -238,7 +242,11 @@ mod tests {
     fn test_shot_noise_1ma() {
         // 1mA current should have ~17.9 pA/√Hz shot noise
         let in_noise = shot_noise_current(1e-3);
-        assert!((in_noise - 17.9e-12).abs() < 0.5e-12, "Expected ~17.9 pA/√Hz, got {}", in_noise);
+        assert!(
+            (in_noise - 17.9e-12).abs() < 0.5e-12,
+            "Expected ~17.9 pA/√Hz, got {}",
+            in_noise
+        );
     }
 
     #[test]

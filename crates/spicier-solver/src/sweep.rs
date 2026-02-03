@@ -293,6 +293,7 @@ pub trait SweepStamper: Send + Sync {
     ///
     /// Default implementation uses dense stamping and extracts non-zeros.
     /// Override for better performance with direct triplet generation.
+    #[allow(clippy::type_complexity)]
     fn stamp_triplets(&self) -> (Vec<(usize, usize, f64)>, Vec<(usize, f64)>) {
         let size = self.num_nodes() + self.num_vsources();
         let mut matrix = nalgebra::DMatrix::zeros(size, size);

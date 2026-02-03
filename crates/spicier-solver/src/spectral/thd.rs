@@ -121,11 +121,9 @@ fn find_bin_for_frequency(frequencies: &[f64], target_freq: f64) -> Option<usize
         1.0
     };
 
-    if best_diff <= freq_resolution {
-        Some(best_idx)
-    } else {
-        Some(best_idx) // Still return best match
-    }
+    // Return best match regardless of how close it is
+    let _ = freq_resolution; // Used for potential future threshold check
+    Some(best_idx)
 }
 
 /// Search for the actual peak near an expected frequency.
@@ -198,12 +196,15 @@ fn compute_thd_from_spectrum(
         ),
         None => {
             // Fall back to expected frequency bin
-            let idx = find_bin_for_frequency(&spectrum.frequencies, fundamental_freq)
-                .unwrap_or(0);
+            let idx = find_bin_for_frequency(&spectrum.frequencies, fundamental_freq).unwrap_or(0);
             (
                 spectrum.magnitude.get(idx).copied().unwrap_or(0.0),
                 spectrum.phase.get(idx).copied().unwrap_or(0.0),
-                spectrum.frequencies.get(idx).copied().unwrap_or(fundamental_freq),
+                spectrum
+                    .frequencies
+                    .get(idx)
+                    .copied()
+                    .unwrap_or(fundamental_freq),
             )
         }
     };
@@ -234,26 +235,33 @@ fn compute_thd_from_spectrum(
             break;
         }
 
-        let (mag, phase_val, actual_freq) =
-            match find_peak_near_frequency(&spectrum.frequencies, &spectrum.magnitude, target_freq, search_range)
-            {
-                Some(idx) => (
-                    spectrum.magnitude[idx],
-                    spectrum.phase[idx],
-                    spectrum.frequencies[idx],
-                ),
-                None => {
-                    // Fall back to expected bin
-                    match find_bin_for_frequency(&spectrum.frequencies, target_freq) {
-                        Some(idx) => (
-                            spectrum.magnitude.get(idx).copied().unwrap_or(0.0),
-                            spectrum.phase.get(idx).copied().unwrap_or(0.0),
-                            spectrum.frequencies.get(idx).copied().unwrap_or(target_freq),
-                        ),
-                        None => (0.0, 0.0, target_freq),
-                    }
+        let (mag, phase_val, actual_freq) = match find_peak_near_frequency(
+            &spectrum.frequencies,
+            &spectrum.magnitude,
+            target_freq,
+            search_range,
+        ) {
+            Some(idx) => (
+                spectrum.magnitude[idx],
+                spectrum.phase[idx],
+                spectrum.frequencies[idx],
+            ),
+            None => {
+                // Fall back to expected bin
+                match find_bin_for_frequency(&spectrum.frequencies, target_freq) {
+                    Some(idx) => (
+                        spectrum.magnitude.get(idx).copied().unwrap_or(0.0),
+                        spectrum.phase.get(idx).copied().unwrap_or(0.0),
+                        spectrum
+                            .frequencies
+                            .get(idx)
+                            .copied()
+                            .unwrap_or(target_freq),
+                    ),
+                    None => (0.0, 0.0, target_freq),
                 }
-            };
+            }
+        };
 
         let relative_percent = if fundamental_magnitude > 1e-20 {
             (mag / fundamental_magnitude) * 100.0
@@ -347,8 +355,7 @@ mod tests {
         // 2nd harmonic: 0.1 (10%)
         // 3rd harmonic: 0.05 (5%)
         // Expected THD = sqrt(0.1² + 0.05²) / 1.0 × 100 = sqrt(0.0125) × 100 ≈ 11.18%
-        let samples =
-            create_signal_with_harmonics(1000.0, &[1.0, 0.1, 0.05], 44100.0, 0.1);
+        let samples = create_signal_with_harmonics(1000.0, &[1.0, 0.1, 0.05], 44100.0, 0.1);
         let result = compute_thd_from_samples(&samples, 44100.0, 1000.0, 10);
 
         let expected_thd = (0.1_f64.powi(2) + 0.05_f64.powi(2)).sqrt() * 100.0;

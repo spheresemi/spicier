@@ -117,12 +117,7 @@ pub struct Bjt {
 
 impl Bjt {
     /// Create a new NPN transistor with default parameters.
-    pub fn npn(
-        name: impl Into<String>,
-        collector: NodeId,
-        base: NodeId,
-        emitter: NodeId,
-    ) -> Self {
+    pub fn npn(name: impl Into<String>, collector: NodeId, base: NodeId, emitter: NodeId) -> Self {
         Self {
             name: name.into(),
             node_collector: collector,
@@ -134,12 +129,7 @@ impl Bjt {
     }
 
     /// Create a new PNP transistor with default parameters.
-    pub fn pnp(
-        name: impl Into<String>,
-        collector: NodeId,
-        base: NodeId,
-        emitter: NodeId,
-    ) -> Self {
+    pub fn pnp(name: impl Into<String>, collector: NodeId, base: NodeId, emitter: NodeId) -> Self {
         Self {
             name: name.into(),
             node_collector: collector,

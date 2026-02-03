@@ -579,7 +579,12 @@ pub fn build_transient_state(
                     let branch_index = current_base_index + i;
 
                     // Inductor in series
-                    inds.push(InductorState::new(l_section, left_node, right_node, branch_index));
+                    inds.push(InductorState::new(
+                        l_section,
+                        left_node,
+                        right_node,
+                        branch_index,
+                    ));
 
                     // Shunt capacitor at right_node (to ground)
                     caps.push(CapacitorState::new(c_section, right_node, None));

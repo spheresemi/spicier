@@ -9,9 +9,9 @@ use spicier_devices::expression::{EvalContext, parse_expression_with_params};
 use spicier_devices::jfet::JfetParams;
 use spicier_devices::mosfet::{Bsim3Params, MosfetParams, MosfetType};
 
+use super::ParamContext;
 use crate::error::{Error, Result};
 use crate::lexer::Token;
-use super::ParamContext;
 
 use super::types::{
     AcSweepType, AnalysisCommand, DcSweepSpec, DcSweepType, InitialCondition, MeasureAnalysis,
@@ -291,10 +291,7 @@ impl<'a> Parser<'a> {
         } else {
             return Err(Error::ParseError {
                 line,
-                message: format!(
-                    "expected V(node) for .NOISE output, got '{}'",
-                    output_name
-                ),
+                message: format!("expected V(node) for .NOISE output, got '{}'", output_name),
             });
         };
 
@@ -1005,10 +1002,15 @@ impl<'a> Parser<'a> {
                     let param_names: HashSet<String> = self.parameters.keys().cloned().collect();
 
                     // Parse expression with parameter context
-                    let expr = parse_expression_with_params(&expr_str, &param_names)
-                        .map_err(|e| Error::ParseError {
-                            line,
-                            message: format!(".PARAM: invalid expression for '{}': {}", pname, e),
+                    let expr =
+                        parse_expression_with_params(&expr_str, &param_names).map_err(|e| {
+                            Error::ParseError {
+                                line,
+                                message: format!(
+                                    ".PARAM: invalid expression for '{}': {}",
+                                    pname, e
+                                ),
+                            }
                         })?;
 
                     // Evaluate immediately (parameters are compile-time constants)

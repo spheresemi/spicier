@@ -28,7 +28,7 @@ pub const SIMD_LANES_AVX2: usize = 4;
 /// Round up to next multiple of SIMD lane count for padding.
 #[inline]
 pub fn round_up_to_simd(count: usize) -> usize {
-    (count + SIMD_LANES_AVX2 - 1) / SIMD_LANES_AVX2 * SIMD_LANES_AVX2
+    count.div_ceil(SIMD_LANES_AVX2) * SIMD_LANES_AVX2
 }
 
 // ============================================================================
@@ -414,6 +414,7 @@ impl MosfetBatch {
     }
 
     /// Add a MOSFET to the batch.
+    #[allow(clippy::too_many_arguments)]
     pub fn push(
         &mut self,
         mos_type: BatchMosfetType,
@@ -619,8 +620,8 @@ mod tests {
         batch.evaluate_batch(&voltages, &mut id, &mut gd, SimdCapability::Scalar);
 
         // All should have positive current at forward bias
-        for i in 0..5 {
-            assert!(id[i] > 0.0, "Diode {} should have positive current", i);
+        for (i, &current) in id.iter().enumerate().take(5) {
+            assert!(current > 0.0, "Diode {} should have positive current", i);
         }
     }
 

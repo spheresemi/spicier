@@ -491,7 +491,7 @@ mod tests {
 
         // f32 uniform should be in [0, 1)
         let u = uniform_f32(seed, 0, 0);
-        assert!(u >= 0.0 && u < 1.0);
+        assert!((0.0..1.0).contains(&u));
 
         // f32 gaussian should produce reasonable values
         let g = gaussian_f32(seed, 0, 0);
@@ -504,7 +504,7 @@ mod tests {
         let config = GpuRngConfig::new(42);
 
         let u = config.uniform(0, 0);
-        assert!(u >= 0.0 && u < 1.0);
+        assert!((0.0..1.0).contains(&u));
 
         let g = config.gaussian(0, 0);
         assert!(g.is_finite());

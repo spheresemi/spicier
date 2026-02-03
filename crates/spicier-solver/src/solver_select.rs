@@ -178,7 +178,7 @@ fn solve_with_gmres(
     gmres_config: &GmresConfig,
 ) -> Result<SolveResult> {
     let op = SparseRealOperator::from_triplets(size, triplets)
-        .ok_or_else(|| crate::error::Error::SingularMatrix)?;
+        .ok_or(crate::error::Error::SingularMatrix)?;
 
     let rhs_slice: Vec<f64> = rhs.iter().copied().collect();
     let result: RealGmresResult = solve_gmres_real(&op, &rhs_slice, gmres_config);

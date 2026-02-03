@@ -6,12 +6,12 @@ use spicier_core::{Netlist, NodeId, units::parse_value};
 use spicier_devices::bjt::BjtParams;
 use spicier_devices::diode::DiodeParams;
 use spicier_devices::jfet::JfetParams;
-use spicier_devices::mosfet::MosfetParams;
+use spicier_devices::mosfet::{Bsim3Params, MosfetParams};
 
 use crate::error::{Error, Result};
 use crate::lexer::{Lexer, SpannedToken, Token};
 
-use spicier_devices::expression::{parse_expression_with_params, EvalContext};
+use spicier_devices::expression::{EvalContext, parse_expression_with_params};
 use std::collections::HashSet;
 
 mod commands;
@@ -131,6 +131,10 @@ pub(crate) enum ModelDefinition {
     Diode(DiodeParams),
     Nmos(MosfetParams),
     Pmos(MosfetParams),
+    /// BSIM3 NMOS (LEVEL=49 or LEVEL=8)
+    Nmos49(Bsim3Params),
+    /// BSIM3 PMOS (LEVEL=49 or LEVEL=8)
+    Pmos49(Bsim3Params),
     Njf(JfetParams),
     Pjf(JfetParams),
     Npn(BjtParams),
@@ -396,12 +400,11 @@ impl<'a> Parser<'a> {
         let merged = ctx.merged();
         let param_names: HashSet<String> = merged.keys().cloned().collect();
 
-        let parsed = parse_expression_with_params(expr, &param_names).map_err(|e| {
-            Error::ParseError {
+        let parsed =
+            parse_expression_with_params(expr, &param_names).map_err(|e| Error::ParseError {
                 line,
                 message: format!("invalid expression '{{{}}}': {}", expr, e),
-            }
-        })?;
+            })?;
 
         let eval_ctx = EvalContext::params_only(&merged);
         Ok(parsed.eval(&eval_ctx))
@@ -524,6 +527,30 @@ impl<'a> Parser<'a> {
         }
 
         // Named node (or numeric node with ID conflict) - assign next available ID
+        let max_id = self
+            .node_map
+            .values()
+            .filter(|id| !id.is_ground())
+            .map(|id| id.as_u32())
+            .max()
+            .unwrap_or(0);
+        let id = NodeId::new(max_id + 1);
+        self.node_map.insert(name.to_string(), id);
+        self.netlist.register_node(id);
+        id
+    }
+
+    /// Get or create an internal node for device expansion (e.g., transmission line LC sections).
+    ///
+    /// Internal nodes are automatically named and registered. This is used by devices
+    /// that need to create intermediate nodes during their expansion into primitive elements.
+    pub(crate) fn get_or_create_internal_node(&mut self, name: &str) -> NodeId {
+        // Internal nodes are always named nodes, never numeric
+        if let Some(&id) = self.node_map.get(name) {
+            return id;
+        }
+
+        // Assign next available ID
         let max_id = self
             .node_map
             .values()
@@ -1261,6 +1288,44 @@ K1 L1 L2 0.9
     }
 
     #[test]
+    fn test_parse_multi_winding_transformer() {
+        // Test 3-winding transformer (creates 3 pairwise couplings)
+        let input = r#"Multi-Winding Transformer
+V1 1 0 AC 1
+L1 1 0 1m
+L2 2 0 1m
+L3 3 0 1m
+R1 2 0 1k
+R2 3 0 1k
+K1 L1 L2 L3 0.95
+.end
+"#;
+
+        let netlist = parse(input).unwrap();
+        // V1, L1, L2, L3, R1, R2 = 6 devices
+        // K1 with 3 inductors creates 3 pairwise couplings: K1_L1_L2, K1_L1_L3, K1_L2_L3
+        assert_eq!(netlist.num_devices(), 9); // 6 + 3 couplings
+    }
+
+    #[test]
+    fn test_parse_four_winding_transformer() {
+        // Test 4-winding transformer (creates 6 pairwise couplings: 4*3/2 = 6)
+        let input = r#"Four-Winding Transformer
+L1 1 0 1m
+L2 2 0 1m
+L3 3 0 1m
+L4 4 0 1m
+K1 L1 L2 L3 L4 0.9
+.end
+"#;
+
+        let netlist = parse(input).unwrap();
+        // L1, L2, L3, L4 = 4 devices
+        // K1 with 4 inductors creates 6 pairwise couplings
+        assert_eq!(netlist.num_devices(), 10); // 4 + 6 couplings
+    }
+
+    #[test]
     fn test_parse_bjt_full_params() {
         let input = r#"BJT Full Params
 .MODEL Q2N2222 NPN (IS=1e-14 BF=100 BR=1 NF=1 NR=1 VAF=100 RB=10 RE=0.1 RC=1 CJE=25p CJC=8p TF=0.4n TR=10n)
@@ -1392,9 +1457,7 @@ R1 1 0 1k
         let result = parse_full(input).unwrap();
         assert_eq!(result.measurements.len(), 1);
         match &result.measurements[0].measure_type {
-            super::types::MeasureType::Statistic {
-                func, from, to, ..
-            } => {
+            super::types::MeasureType::Statistic { func, from, to, .. } => {
                 assert!(matches!(func, super::types::StatFunc::Avg));
                 assert!((from.unwrap() - 0.0).abs() < 1e-12);
                 assert!((to.unwrap() - 10e-6).abs() < 1e-12);
@@ -1416,7 +1479,10 @@ R1 1 0 1k
         let result = parse_full(input).unwrap();
         assert_eq!(result.measurements.len(), 1);
         match &result.measurements[0].measure_type {
-            super::types::MeasureType::FindAt { find_expr, at_value } => {
+            super::types::MeasureType::FindAt {
+                find_expr,
+                at_value,
+            } => {
                 assert_eq!(find_expr, "V(1)");
                 assert!((at_value - 2.5).abs() < 1e-12);
             }
@@ -1663,14 +1729,18 @@ V1 1 0 10
         let result = parse_full(input).unwrap();
 
         // Check that a DC analysis was found
-        assert!(result
-            .analyses
-            .iter()
-            .any(|a| matches!(a, super::types::AnalysisCommand::Dc { .. })));
+        assert!(
+            result
+                .analyses
+                .iter()
+                .any(|a| matches!(a, super::types::AnalysisCommand::Dc { .. }))
+        );
 
         // Extract the DC sweep spec
-        if let Some(super::types::AnalysisCommand::Dc { sweeps }) =
-            result.analyses.iter().find(|a| matches!(a, super::types::AnalysisCommand::Dc { .. }))
+        if let Some(super::types::AnalysisCommand::Dc { sweeps }) = result
+            .analyses
+            .iter()
+            .find(|a| matches!(a, super::types::AnalysisCommand::Dc { .. }))
         {
             assert_eq!(sweeps.len(), 1);
             assert_eq!(sweeps[0].source_name.to_uppercase(), "R");
@@ -1694,8 +1764,10 @@ R1 1 0 1k
 
         let result = parse_full(input).unwrap();
 
-        if let Some(super::types::AnalysisCommand::Dc { sweeps }) =
-            result.analyses.iter().find(|a| matches!(a, super::types::AnalysisCommand::Dc { .. }))
+        if let Some(super::types::AnalysisCommand::Dc { sweeps }) = result
+            .analyses
+            .iter()
+            .find(|a| matches!(a, super::types::AnalysisCommand::Dc { .. }))
         {
             assert_eq!(sweeps.len(), 1);
             assert_eq!(sweeps[0].sweep_type, super::types::DcSweepType::Source);
@@ -1716,8 +1788,10 @@ R1 1 0 {R}
 
         let result = parse_full(input).unwrap();
 
-        if let Some(super::types::AnalysisCommand::Dc { sweeps }) =
-            result.analyses.iter().find(|a| matches!(a, super::types::AnalysisCommand::Dc { .. }))
+        if let Some(super::types::AnalysisCommand::Dc { sweeps }) = result
+            .analyses
+            .iter()
+            .find(|a| matches!(a, super::types::AnalysisCommand::Dc { .. }))
         {
             assert_eq!(sweeps.len(), 2);
             // First sweep is parameter
@@ -1747,9 +1821,10 @@ R2 2 0 1k
 
         let result = parse_full(input).unwrap();
 
-        let noise_cmd = result.analyses.iter().find(|a| {
-            matches!(a, super::types::AnalysisCommand::Noise { .. })
-        });
+        let noise_cmd = result
+            .analyses
+            .iter()
+            .find(|a| matches!(a, super::types::AnalysisCommand::Noise { .. }));
 
         assert!(noise_cmd.is_some(), "Expected NOISE analysis command");
 
@@ -1790,9 +1865,10 @@ R3 3 0 1k
             output_node,
             output_ref_node,
             ..
-        }) = result.analyses.iter().find(|a| {
-            matches!(a, super::types::AnalysisCommand::Noise { .. })
-        })
+        }) = result
+            .analyses
+            .iter()
+            .find(|a| matches!(a, super::types::AnalysisCommand::Noise { .. }))
         {
             assert_eq!(output_node, "2");
             assert_eq!(output_ref_node.as_deref(), Some("3"));
@@ -1816,14 +1892,158 @@ R1 1 0 1k
             sweep_type,
             num_points,
             ..
-        }) = result.analyses.iter().find(|a| {
-            matches!(a, super::types::AnalysisCommand::Noise { .. })
-        })
+        }) = result
+            .analyses
+            .iter()
+            .find(|a| matches!(a, super::types::AnalysisCommand::Noise { .. }))
         {
             assert_eq!(*sweep_type, super::types::AcSweepType::Lin);
             assert_eq!(*num_points, 100);
         } else {
             panic!("Expected NOISE analysis command");
         }
+    }
+
+    // =========================================================================
+    // Transmission line tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_transmission_line_basic() {
+        let input = r#"Transmission Line Test
+V1 in 0 PULSE(0 1 0 1n 1n 10n 100n)
+T1 in 0 out 0 Z0=50 TD=5n
+R1 out 0 50
+.TRAN 0.1n 50n
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        // V1, T1, R1 = 3 devices
+        assert_eq!(result.netlist.num_devices(), 3);
+        // V1 has 1 current var, T1 has 10 (default LC sections)
+        assert_eq!(result.netlist.num_current_vars(), 11);
+    }
+
+    #[test]
+    fn test_parse_transmission_line_with_nl() {
+        let input = r#"Transmission Line Custom Sections
+V1 in 0 5
+T1 in 0 out 0 Z0=50 TD=1n NL=5
+R1 out 0 50
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert_eq!(result.netlist.num_devices(), 3);
+        // V1 has 1 current var, T1 has 5 (5 LC sections)
+        assert_eq!(result.netlist.num_current_vars(), 6);
+    }
+
+    #[test]
+    fn test_parse_transmission_line_missing_z0() {
+        let input = r#"Transmission Line Missing Z0
+V1 in 0 5
+T1 in 0 out 0 TD=1n
+R1 out 0 50
+.end
+"#;
+
+        let result = parse_full(input);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("Z0"));
+    }
+
+    #[test]
+    fn test_parse_transmission_line_missing_td() {
+        let input = r#"Transmission Line Missing TD
+V1 in 0 5
+T1 in 0 out 0 Z0=50
+R1 out 0 50
+.end
+"#;
+
+        let result = parse_full(input);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("TD"));
+    }
+
+    #[test]
+    fn test_parse_transmission_line_internal_nodes() {
+        let input = r#"Transmission Line Internal Nodes
+V1 1 0 5
+T1 1 0 2 0 Z0=50 TD=1n NL=3
+R1 2 0 50
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        // 3 sections = 2 internal nodes
+        // Nodes: 1, 2 (external) + 2 internal = 4 total
+        assert_eq!(result.netlist.num_nodes(), 4);
+    }
+
+    #[test]
+    fn test_parse_bsim3_model() {
+        let input = r#"BSIM3 NMOS Test
+.MODEL NMOD NMOS LEVEL=49 VTH0=0.4 U0=400 TOX=9e-9 K1=0.5 VSAT=1.5e5
+M1 d g s b NMOD W=1u L=100n
+Vds d 0 DC 1
+Vgs g 0 DC 1
+Vbs b 0 DC 0
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        // Should parse without errors and create a circuit
+        assert_eq!(result.netlist.num_nodes(), 4); // d, g, s, b
+        assert!(result.netlist.num_devices() >= 4); // M1, Vds, Vgs, Vbs
+    }
+
+    #[test]
+    fn test_parse_bsim3_pmos_model() {
+        let input = r#"BSIM3 PMOS Test
+.MODEL PMOD PMOS LEVEL=49 VTH0=-0.4 U0=150 TOX=9e-9
+M1 d g s b PMOD W=2u L=100n
+Vds d 0 DC -1
+Vgs g 0 DC -1
+Vbs b 0 DC 0
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert!(result.netlist.num_devices() >= 4);
+    }
+
+    #[test]
+    fn test_parse_bsim3_level8() {
+        // LEVEL=8 is also BSIM3 in some simulators
+        let input = r#"BSIM3 Level 8 Test
+.MODEL NMOD NMOS LEVEL=8 VTH0=0.5 U0=500
+M1 d g s b NMOD W=1u L=50n
+Vds d 0 DC 1.0
+Vgs g 0 DC 0.8
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert!(result.netlist.num_devices() >= 3);
+    }
+
+    #[test]
+    fn test_parse_level1_default() {
+        // Without LEVEL parameter, should default to Level 1
+        let input = r#"Level 1 Default Test
+.MODEL NMOD NMOS VTO=0.7 KP=2e-5
+M1 d g s b NMOD W=10u L=1u
+Vds d 0 DC 5
+Vgs g 0 DC 2
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert!(result.netlist.num_devices() >= 3);
     }
 }

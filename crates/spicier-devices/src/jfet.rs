@@ -185,8 +185,7 @@ impl Jfet {
             let ids = ids_base * (1.0 + lambda * vds);
 
             // ∂Ids/∂Vds = β(2*Vov - 2*Vds)(1 + λVds) + β(2*Vov*Vds - Vds²)λ
-            let gds = beta * (2.0 * vov - 2.0 * vds) * (1.0 + lambda * vds)
-                + ids_base * lambda;
+            let gds = beta * (2.0 * vov - 2.0 * vds) * (1.0 + lambda * vds) + ids_base * lambda;
 
             // ∂Ids/∂Vgs = β * 2 * Vds * (1 + λVds)
             let gm = beta * 2.0 * vds * (1.0 + lambda * vds);

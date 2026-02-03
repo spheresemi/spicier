@@ -78,10 +78,12 @@ pub struct GpuMosfetEvaluator {
 impl GpuMosfetEvaluator {
     /// Create a new MOSFET evaluator.
     pub fn new(ctx: Arc<WgpuContext>) -> Result<Self> {
-        let shader = ctx.device().create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("MOSFET Evaluation Shader"),
-            source: wgpu::ShaderSource::Wgsl(MOSFET_SHADER.into()),
-        });
+        let shader = ctx
+            .device()
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("MOSFET Evaluation Shader"),
+                source: wgpu::ShaderSource::Wgsl(MOSFET_SHADER.into()),
+            });
 
         let bind_group_layout =
             ctx.device()
@@ -200,14 +202,14 @@ impl GpuMosfetEvaluator {
         }
 
         // Create uniform buffer for params
-        let params_buffer = self
-            .ctx
-            .device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("MOSFET Params"),
-                contents: bytemuck::bytes_of(params),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
+        let params_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("MOSFET Params"),
+                    contents: bytemuck::bytes_of(params),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
 
         // Create input buffers
         let vgs_buffer = self
@@ -284,12 +286,12 @@ impl GpuMosfetEvaluator {
             });
 
         // Dispatch compute
-        let mut encoder = self
-            .ctx
-            .device()
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("MOSFET Eval Encoder"),
-            });
+        let mut encoder =
+            self.ctx
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("MOSFET Eval Encoder"),
+                });
 
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -300,7 +302,7 @@ impl GpuMosfetEvaluator {
             pass.set_bind_group(0, &bind_group, &[]);
 
             // Dispatch with 256 threads per workgroup
-            let workgroups = (count as u32 + 255) / 256;
+            let workgroups = (count as u32).div_ceil(256);
             pass.dispatch_workgroups(workgroups, 1, 1);
         }
 
@@ -505,10 +507,12 @@ pub struct GpuDiodeEvaluator {
 impl GpuDiodeEvaluator {
     /// Create a new diode evaluator.
     pub fn new(ctx: Arc<WgpuContext>) -> Result<Self> {
-        let shader = ctx.device().create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Diode Evaluation Shader"),
-            source: wgpu::ShaderSource::Wgsl(DIODE_SHADER.into()),
-        });
+        let shader = ctx
+            .device()
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Diode Evaluation Shader"),
+                source: wgpu::ShaderSource::Wgsl(DIODE_SHADER.into()),
+            });
 
         let bind_group_layout =
             ctx.device()
@@ -592,14 +596,14 @@ impl GpuDiodeEvaluator {
         }
 
         // Create uniform buffer for params
-        let params_buffer = self
-            .ctx
-            .device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Diode Params"),
-                contents: bytemuck::bytes_of(params),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
+        let params_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Diode Params"),
+                    contents: bytemuck::bytes_of(params),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
 
         // Create input buffer
         let vd_buffer = self
@@ -652,12 +656,12 @@ impl GpuDiodeEvaluator {
             });
 
         // Dispatch compute
-        let mut encoder = self
-            .ctx
-            .device()
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Diode Eval Encoder"),
-            });
+        let mut encoder =
+            self.ctx
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Diode Eval Encoder"),
+                });
 
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -667,7 +671,7 @@ impl GpuDiodeEvaluator {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
 
-            let workgroups = (count as u32 + 255) / 256;
+            let workgroups = (count as u32).div_ceil(256);
             pass.dispatch_workgroups(workgroups, 1, 1);
         }
 
@@ -834,10 +838,12 @@ pub struct GpuBjtEvaluator {
 impl GpuBjtEvaluator {
     /// Create a new BJT evaluator.
     pub fn new(ctx: Arc<WgpuContext>) -> Result<Self> {
-        let shader = ctx.device().create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("BJT Evaluation Shader"),
-            source: wgpu::ShaderSource::Wgsl(BJT_SHADER.into()),
-        });
+        let shader = ctx
+            .device()
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("BJT Evaluation Shader"),
+                source: wgpu::ShaderSource::Wgsl(BJT_SHADER.into()),
+            });
 
         let bind_group_layout =
             ctx.device()
@@ -943,14 +949,14 @@ impl GpuBjtEvaluator {
         }
 
         // Create uniform buffer for params
-        let params_buffer = self
-            .ctx
-            .device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("BJT Params"),
-                contents: bytemuck::bytes_of(params),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
+        let params_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("BJT Params"),
+                    contents: bytemuck::bytes_of(params),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
 
         // Create input buffers
         let vbe_buffer = self
@@ -1015,12 +1021,12 @@ impl GpuBjtEvaluator {
             });
 
         // Dispatch compute
-        let mut encoder = self
-            .ctx
-            .device()
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("BJT Eval Encoder"),
-            });
+        let mut encoder =
+            self.ctx
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("BJT Eval Encoder"),
+                });
 
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -1030,7 +1036,7 @@ impl GpuBjtEvaluator {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
 
-            let workgroups = (count as u32 + 255) / 256;
+            let workgroups = (count as u32).div_ceil(256);
             pass.dispatch_workgroups(workgroups, 1, 1);
         }
 
@@ -1214,7 +1220,11 @@ mod tests {
         let results = evaluator.evaluate(&params, &vgs, &vds, &vbs).unwrap();
 
         assert_eq!(results.len(), 1);
-        assert!(results[0].id.abs() < 1e-10, "Id should be ~0 in cutoff: {}", results[0].id);
+        assert!(
+            results[0].id.abs() < 1e-10,
+            "Id should be ~0 in cutoff: {}",
+            results[0].id
+        );
     }
 
     #[test]
@@ -1273,9 +1283,15 @@ mod tests {
         let results = evaluator.evaluate(&params, &vgs, &vds, &vbs).unwrap();
 
         assert_eq!(results.len(), 1);
-        assert!(results[0].id > 0.0, "Id should be positive in linear region");
+        assert!(
+            results[0].id > 0.0,
+            "Id should be positive in linear region"
+        );
         // In linear region, gds should be larger than in saturation
-        assert!(results[0].gds > 1e-6, "gds should be significant in linear region");
+        assert!(
+            results[0].gds > 1e-6,
+            "gds should be significant in linear region"
+        );
     }
 
     #[test]
@@ -1298,8 +1314,12 @@ mod tests {
         println!("{:-<40}", "");
 
         for &count in &[10_000, 100_000, 1_000_000, 5_000_000] {
-            let vgs: Vec<f32> = (0..count).map(|i| 0.5 + (i as f32 / count as f32) * 1.5).collect();
-            let vds: Vec<f32> = (0..count).map(|i| 0.1 + (i as f32 / count as f32) * 2.0).collect();
+            let vgs: Vec<f32> = (0..count)
+                .map(|i| 0.5 + (i as f32 / count as f32) * 1.5)
+                .collect();
+            let vds: Vec<f32> = (0..count)
+                .map(|i| 0.1 + (i as f32 / count as f32) * 2.0)
+                .collect();
             let vbs: Vec<f32> = vec![0.0; count];
 
             // Warm-up run
@@ -1333,9 +1353,11 @@ mod tests {
         };
 
         let evaluator = GpuMosfetEvaluator::new(ctx).unwrap();
-        let mut params = GpuMosfetParams::default();
-        params.polarity = -1.0; // PMOS
-        params.vto = -0.7; // Negative threshold for PMOS
+        let params = GpuMosfetParams {
+            polarity: -1.0, // PMOS
+            vto: -0.7,      // Negative threshold for PMOS
+            ..Default::default()
+        };
 
         // PMOS: Vgs = -1.5V, Vds = -2.0V → saturation
         let vgs = vec![-1.5];
@@ -1346,7 +1368,11 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         // PMOS current flows from source to drain (negative Id convention)
-        assert!(results[0].id < 0.0, "PMOS Id should be negative: {}", results[0].id);
+        assert!(
+            results[0].id < 0.0,
+            "PMOS Id should be negative: {}",
+            results[0].id
+        );
     }
 
     // ========================================================================
@@ -1372,7 +1398,11 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         // At 0.7V forward bias, current should be significant (mA range)
-        assert!(results[0].id > 1e-6, "Id should be > 1µA at 0.7V: {}", results[0].id);
+        assert!(
+            results[0].id > 1e-6,
+            "Id should be > 1µA at 0.7V: {}",
+            results[0].id
+        );
         assert!(results[0].gd > 0.0, "gd should be positive");
     }
 
@@ -1395,8 +1425,16 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         // Reverse bias: current should be ~-Is (very small negative)
-        assert!(results[0].id < 0.0, "Id should be negative in reverse: {}", results[0].id);
-        assert!(results[0].id.abs() < 1e-12, "Id should be ~-Is: {}", results[0].id);
+        assert!(
+            results[0].id < 0.0,
+            "Id should be negative in reverse: {}",
+            results[0].id
+        );
+        assert!(
+            results[0].id.abs() < 1e-12,
+            "Id should be ~-Is: {}",
+            results[0].id
+        );
     }
 
     #[test]
@@ -1417,7 +1455,9 @@ mod tests {
         println!("{:-<40}", "");
 
         for &count in &[10_000, 100_000, 1_000_000, 5_000_000] {
-            let vd: Vec<f32> = (0..count).map(|i| -1.0 + (i as f32 / count as f32) * 2.0).collect();
+            let vd: Vec<f32> = (0..count)
+                .map(|i| -1.0 + (i as f32 / count as f32) * 2.0)
+                .collect();
 
             // Warm-up run
             let _ = evaluator.evaluate(&params, &vd);
@@ -1454,8 +1494,16 @@ mod tests {
         let results = evaluator.evaluate(&params, &vbe, &vce).unwrap();
 
         assert_eq!(results.len(), 1);
-        assert!(results[0].ic.abs() < 1e-10, "Ic should be ~0 in cutoff: {}", results[0].ic);
-        assert!(results[0].ib.abs() < 1e-10, "Ib should be ~0 in cutoff: {}", results[0].ib);
+        assert!(
+            results[0].ic.abs() < 1e-10,
+            "Ic should be ~0 in cutoff: {}",
+            results[0].ic
+        );
+        assert!(
+            results[0].ib.abs() < 1e-10,
+            "Ib should be ~0 in cutoff: {}",
+            results[0].ib
+        );
     }
 
     #[test]
@@ -1477,16 +1525,20 @@ mod tests {
         let results = evaluator.evaluate(&params, &vbe, &vce).unwrap();
 
         assert_eq!(results.len(), 1);
-        assert!(results[0].ic > 0.0, "Ic should be positive: {}", results[0].ic);
-        assert!(results[0].ib > 0.0, "Ib should be positive: {}", results[0].ib);
+        assert!(
+            results[0].ic > 0.0,
+            "Ic should be positive: {}",
+            results[0].ic
+        );
+        assert!(
+            results[0].ib > 0.0,
+            "Ib should be positive: {}",
+            results[0].ib
+        );
 
         // Check beta relationship: Ic ≈ β * Ib
         let beta = results[0].ic / results[0].ib;
-        assert!(
-            (beta - 100.0).abs() < 20.0,
-            "β should be ~100: {}",
-            beta
-        );
+        assert!((beta - 100.0).abs() < 20.0, "β should be ~100: {}", beta);
 
         // Check gm is positive
         assert!(results[0].gm > 0.0, "gm should be positive");
@@ -1503,8 +1555,10 @@ mod tests {
         };
 
         let evaluator = GpuBjtEvaluator::new(ctx).unwrap();
-        let mut params = GpuBjtParams::default();
-        params.polarity = -1.0; // PNP
+        let params = GpuBjtParams {
+            polarity: -1.0, // PNP
+            ..Default::default()
+        };
 
         // PNP forward active: Vbe = -0.7V, Vce = -5V
         let vbe = vec![-0.7];
@@ -1513,8 +1567,16 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         // PNP currents are negative
-        assert!(results[0].ic < 0.0, "PNP Ic should be negative: {}", results[0].ic);
-        assert!(results[0].ib < 0.0, "PNP Ib should be negative: {}", results[0].ib);
+        assert!(
+            results[0].ic < 0.0,
+            "PNP Ic should be negative: {}",
+            results[0].ic
+        );
+        assert!(
+            results[0].ib < 0.0,
+            "PNP Ib should be negative: {}",
+            results[0].ib
+        );
     }
 
     #[test]
@@ -1536,8 +1598,12 @@ mod tests {
 
         // BJT result is larger (48 bytes) so stay under buffer limits (128MB / 48 = ~2.6M)
         for &count in &[10_000, 100_000, 1_000_000, 2_500_000] {
-            let vbe: Vec<f32> = (0..count).map(|i| 0.5 + (i as f32 / count as f32) * 0.3).collect();
-            let vce: Vec<f32> = (0..count).map(|i| 1.0 + (i as f32 / count as f32) * 4.0).collect();
+            let vbe: Vec<f32> = (0..count)
+                .map(|i| 0.5 + (i as f32 / count as f32) * 0.3)
+                .collect();
+            let vce: Vec<f32> = (0..count)
+                .map(|i| 1.0 + (i as f32 / count as f32) * 4.0)
+                .collect();
 
             // Warm-up run
             let _ = evaluator.evaluate(&params, &vbe, &vce);

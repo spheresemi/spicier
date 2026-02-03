@@ -20,7 +20,7 @@ fn bench_real_dot(c: &mut Criterion) {
         });
 
         group.bench_with_input(
-            BenchmarkId::new(&format!("{:?}", cap), size),
+            BenchmarkId::new(format!("{:?}", cap), size),
             &size,
             |bencher, _| {
                 bencher.iter(|| real_dot_product(&a, &b, cap));
@@ -47,7 +47,7 @@ fn bench_complex_dot(c: &mut Criterion) {
         });
 
         group.bench_with_input(
-            BenchmarkId::new(&format!("{:?}", cap), size),
+            BenchmarkId::new(format!("{:?}", cap), size),
             &size,
             |bencher, _| {
                 bencher.iter(|| complex_dot_product(&a, &b, cap));
@@ -74,7 +74,7 @@ fn bench_conjugate_dot(c: &mut Criterion) {
         });
 
         group.bench_with_input(
-            BenchmarkId::new(&format!("{:?}", cap), size),
+            BenchmarkId::new(format!("{:?}", cap), size),
             &size,
             |bencher, _| {
                 bencher.iter(|| complex_conjugate_dot_product(&a, &b, cap));
@@ -101,7 +101,7 @@ fn bench_real_matvec(c: &mut Criterion) {
         });
 
         group.bench_with_input(
-            BenchmarkId::new(&format!("{:?}", cap), n),
+            BenchmarkId::new(format!("{:?}", cap), n),
             &n,
             |bencher, _| {
                 bencher.iter(|| {

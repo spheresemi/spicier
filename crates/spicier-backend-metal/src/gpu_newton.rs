@@ -312,7 +312,9 @@ impl GpuNrState {
         let active_mask = ctx.device().create_buffer(&wgpu::BufferDescriptor {
             label: Some("NR Active Mask"),
             size: mask_size,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -327,7 +329,9 @@ impl GpuNrState {
         let iteration_counts = ctx.device().create_buffer(&wgpu::BufferDescriptor {
             label: Some("NR Iteration Counts"),
             size: mask_size,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -346,7 +350,9 @@ impl GpuNrState {
     /// Initialize solutions from an optional initial guess.
     fn initialize(&self, initial_guess: Option<&[f32]>) {
         if let Some(guess) = initial_guess {
-            self.ctx.queue().write_buffer(&self.solutions, 0, bytemuck::cast_slice(guess));
+            self.ctx
+                .queue()
+                .write_buffer(&self.solutions, 0, bytemuck::cast_slice(guess));
         } else {
             // Zero-initialize solutions
             let zeros = vec![0u8; self.num_sweeps * self.num_nodes * std::mem::size_of::<f32>()];
@@ -355,11 +361,15 @@ impl GpuNrState {
 
         // Initialize all sweeps as active
         let ones = vec![1u32; self.num_sweeps];
-        self.ctx.queue().write_buffer(&self.active_mask, 0, bytemuck::cast_slice(&ones));
+        self.ctx
+            .queue()
+            .write_buffer(&self.active_mask, 0, bytemuck::cast_slice(&ones));
 
         // Zero iteration counts
         let zeros = vec![0u32; self.num_sweeps];
-        self.ctx.queue().write_buffer(&self.iteration_counts, 0, bytemuck::cast_slice(&zeros));
+        self.ctx
+            .queue()
+            .write_buffer(&self.iteration_counts, 0, bytemuck::cast_slice(&zeros));
     }
 
     /// Download final solutions from GPU.
@@ -372,9 +382,12 @@ impl GpuNrState {
             mapped_at_creation: false,
         });
 
-        let mut encoder = self.ctx.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Download Solutions Encoder"),
-        });
+        let mut encoder =
+            self.ctx
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Download Solutions Encoder"),
+                });
         encoder.copy_buffer_to_buffer(&self.solutions, 0, &staging, 0, size);
         self.ctx.queue().submit(std::iter::once(encoder.finish()));
 
@@ -410,91 +423,104 @@ struct GpuSolutionUpdate {
 
 impl GpuSolutionUpdate {
     fn new(ctx: Arc<WgpuContext>) -> Result<Self> {
-        let shader = ctx.device().create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Solution Update Shader"),
-            source: wgpu::ShaderSource::Wgsl(SOLUTION_UPDATE_SHADER.into()),
-        });
+        let shader = ctx
+            .device()
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Solution Update Shader"),
+                source: wgpu::ShaderSource::Wgsl(SOLUTION_UPDATE_SHADER.into()),
+            });
 
-        let layout = ctx.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Solution Update Layout"),
-            entries: &[
-                // Uniforms
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+        let layout = ctx
+            .device()
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Solution Update Layout"),
+                entries: &[
+                    // Uniforms
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                // Solutions (read-write)
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    // Solutions (read-write)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                // Delta x (read-only)
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    // Delta x (read-only)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                // Active mask (read-only)
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    // Active mask (read-only)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                // PN junction node flags (read-only)
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    // PN junction node flags (read-only)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-            ],
-        });
+                ],
+            });
 
-        let pipeline_layout = ctx.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Solution Update Pipeline Layout"),
-            bind_group_layouts: &[&layout],
-            push_constant_ranges: &[],
-        });
+        let pipeline_layout =
+            ctx.device()
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Solution Update Pipeline Layout"),
+                    bind_group_layouts: &[&layout],
+                    push_constant_ranges: &[],
+                });
 
-        let pipeline = ctx.device().create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Solution Update Pipeline"),
-            layout: Some(&pipeline_layout),
-            module: &shader,
-            entry_point: Some("update_solution"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = ctx
+            .device()
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Solution Update Pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some("update_solution"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
-        Ok(Self { ctx, pipeline, layout })
+        Ok(Self {
+            ctx,
+            pipeline,
+            layout,
+        })
     }
 
     /// Update solutions: x_new = x_old + delta_x with voltage limiting.
+    #[allow(clippy::too_many_arguments)]
     fn update(
         &self,
         solutions: &wgpu::Buffer,
@@ -527,39 +553,69 @@ impl GpuSolutionUpdate {
             _pad: [0; 2],
         };
 
-        let uniform_buffer = self.ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Update Uniforms"),
-            contents: bytemuck::bytes_of(&uniforms),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let uniform_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Update Uniforms"),
+                    contents: bytemuck::bytes_of(&uniforms),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
 
-        let delta_buffer = self.ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Delta X"),
-            contents: bytemuck::cast_slice(delta_x),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let delta_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Delta X"),
+                    contents: bytemuck::cast_slice(delta_x),
+                    usage: wgpu::BufferUsages::STORAGE,
+                });
 
-        let pn_flags_buffer = self.ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("PN Node Flags"),
-            contents: bytemuck::cast_slice(pn_node_flags),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let pn_flags_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("PN Node Flags"),
+                    contents: bytemuck::cast_slice(pn_node_flags),
+                    usage: wgpu::BufferUsages::STORAGE,
+                });
 
-        let bind_group = self.ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Update Bind Group"),
-            layout: &self.layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: uniform_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: solutions.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: delta_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: active_mask.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: pn_flags_buffer.as_entire_binding() },
-            ],
-        });
+        let bind_group = self
+            .ctx
+            .device()
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Update Bind Group"),
+                layout: &self.layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: solutions.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: delta_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: active_mask.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: pn_flags_buffer.as_entire_binding(),
+                    },
+                ],
+            });
 
-        let mut encoder = self.ctx.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Update Encoder"),
-        });
+        let mut encoder =
+            self.ctx
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Update Encoder"),
+                });
 
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -568,7 +624,7 @@ impl GpuSolutionUpdate {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
-            let workgroups = ((num_sweeps * num_nodes) as u32 + 255) / 256;
+            let workgroups = ((num_sweeps * num_nodes) as u32).div_ceil(256);
             pass.dispatch_workgroups(workgroups, 1, 1);
         }
 
@@ -593,151 +649,174 @@ struct GpuConvergenceCheck {
 impl GpuConvergenceCheck {
     fn new(ctx: Arc<WgpuContext>) -> Result<Self> {
         // Per-sweep convergence check shader
-        let shader = ctx.device().create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Convergence Check Shader"),
-            source: wgpu::ShaderSource::Wgsl(CONVERGENCE_CHECK_SHADER.into()),
-        });
+        let shader = ctx
+            .device()
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Convergence Check Shader"),
+                source: wgpu::ShaderSource::Wgsl(CONVERGENCE_CHECK_SHADER.into()),
+            });
 
-        let layout = ctx.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Convergence Check Layout"),
-            entries: &[
-                // Uniforms
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+        let layout = ctx
+            .device()
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Convergence Check Layout"),
+                entries: &[
+                    // Uniforms
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                // Current solutions
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    // Current solutions
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                // Previous solutions
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    // Previous solutions
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                // Active mask (read-write)
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    // Active mask (read-write)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                // Iteration counts (read-write)
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    // Iteration counts (read-write)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-            ],
-        });
+                ],
+            });
 
-        let pipeline_layout = ctx.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Convergence Check Pipeline Layout"),
-            bind_group_layouts: &[&layout],
-            push_constant_ranges: &[],
-        });
+        let pipeline_layout =
+            ctx.device()
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Convergence Check Pipeline Layout"),
+                    bind_group_layouts: &[&layout],
+                    push_constant_ranges: &[],
+                });
 
-        let pipeline = ctx.device().create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Convergence Check Pipeline"),
-            layout: Some(&pipeline_layout),
-            module: &shader,
-            entry_point: Some("check_convergence"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = ctx
+            .device()
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Convergence Check Pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some("check_convergence"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         // Reduction shader to count active sweeps
-        let reduce_shader = ctx.device().create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Active Count Reduction Shader"),
-            source: wgpu::ShaderSource::Wgsl(ACTIVE_COUNT_SHADER.into()),
-        });
+        let reduce_shader = ctx
+            .device()
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Active Count Reduction Shader"),
+                source: wgpu::ShaderSource::Wgsl(ACTIVE_COUNT_SHADER.into()),
+            });
 
-        let reduce_layout = ctx.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Active Count Layout"),
-            entries: &[
-                // Uniforms
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // Active mask
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // Output count
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
+        let reduce_layout =
+            ctx.device()
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("Active Count Layout"),
+                    entries: &[
+                        // Uniforms
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        // Active mask
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        // Output count
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 2,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: false },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                    ],
+                });
 
-        let reduce_pipeline_layout = ctx.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Active Count Pipeline Layout"),
-            bind_group_layouts: &[&reduce_layout],
-            push_constant_ranges: &[],
-        });
+        let reduce_pipeline_layout =
+            ctx.device()
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Active Count Pipeline Layout"),
+                    bind_group_layouts: &[&reduce_layout],
+                    push_constant_ranges: &[],
+                });
 
-        let reduce_pipeline = ctx.device().create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Active Count Pipeline"),
-            layout: Some(&reduce_pipeline_layout),
-            module: &reduce_shader,
-            entry_point: Some("count_active"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let reduce_pipeline =
+            ctx.device()
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("Active Count Pipeline"),
+                    layout: Some(&reduce_pipeline_layout),
+                    module: &reduce_shader,
+                    entry_point: Some("count_active"),
+                    compilation_options: Default::default(),
+                    cache: None,
+                });
 
-        Ok(Self { ctx, pipeline, reduce_pipeline, layout, reduce_layout })
+        Ok(Self {
+            ctx,
+            pipeline,
+            reduce_pipeline,
+            layout,
+            reduce_layout,
+        })
     }
 
     /// Check convergence and return active count.
+    #[allow(clippy::too_many_arguments)]
     fn check(
         &self,
         solutions: &wgpu::Buffer,
@@ -765,29 +844,52 @@ impl GpuConvergenceCheck {
             v_reltol,
         };
 
-        let uniform_buffer = self.ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Convergence Uniforms"),
-            contents: bytemuck::bytes_of(&uniforms),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let uniform_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Convergence Uniforms"),
+                    contents: bytemuck::bytes_of(&uniforms),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
 
-        let bind_group = self.ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Convergence Bind Group"),
-            layout: &self.layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: uniform_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: solutions.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: prev_solutions.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: active_mask.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: iteration_counts.as_entire_binding() },
-            ],
-        });
+        let bind_group = self
+            .ctx
+            .device()
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Convergence Bind Group"),
+                layout: &self.layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: solutions.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: prev_solutions.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: active_mask.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: iteration_counts.as_entire_binding(),
+                    },
+                ],
+            });
 
         // Active count output buffer
         let count_buffer = self.ctx.device().create_buffer(&wgpu::BufferDescriptor {
             label: Some("Active Count"),
             size: 4,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -795,21 +897,36 @@ impl GpuConvergenceCheck {
         self.ctx.queue().write_buffer(&count_buffer, 0, &[0u8; 4]);
 
         let reduce_uniforms = [num_sweeps as u32, 0, 0, 0];
-        let reduce_uniform_buffer = self.ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Reduce Uniforms"),
-            contents: bytemuck::cast_slice(&reduce_uniforms),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let reduce_uniform_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Reduce Uniforms"),
+                    contents: bytemuck::cast_slice(&reduce_uniforms),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
 
-        let reduce_bind_group = self.ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Reduce Bind Group"),
-            layout: &self.reduce_layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: reduce_uniform_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: active_mask.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: count_buffer.as_entire_binding() },
-            ],
-        });
+        let reduce_bind_group = self
+            .ctx
+            .device()
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Reduce Bind Group"),
+                layout: &self.reduce_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: reduce_uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: active_mask.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: count_buffer.as_entire_binding(),
+                    },
+                ],
+            });
 
         let staging = self.ctx.device().create_buffer(&wgpu::BufferDescriptor {
             label: Some("Count Staging"),
@@ -818,9 +935,12 @@ impl GpuConvergenceCheck {
             mapped_at_creation: false,
         });
 
-        let mut encoder = self.ctx.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Convergence Encoder"),
-        });
+        let mut encoder =
+            self.ctx
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Convergence Encoder"),
+                });
 
         // First pass: per-sweep convergence check
         {
@@ -830,7 +950,7 @@ impl GpuConvergenceCheck {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
-            let workgroups = (num_sweeps as u32 + 255) / 256;
+            let workgroups = (num_sweeps as u32).div_ceil(256);
             pass.dispatch_workgroups(workgroups, 1, 1);
         }
 
@@ -843,7 +963,7 @@ impl GpuConvergenceCheck {
             pass.set_pipeline(&self.reduce_pipeline);
             pass.set_bind_group(0, &reduce_bind_group, &[]);
             // Use enough workgroups to handle all sweeps
-            let workgroups = (num_sweeps as u32 + 255) / 256;
+            let workgroups = (num_sweeps as u32).div_ceil(256);
             pass.dispatch_workgroups(workgroups, 1, 1);
         }
 
@@ -951,9 +1071,12 @@ impl GpuNewtonRaphson {
         let mut iteration = 0u32;
         while iteration < self.config.max_nr_iterations {
             // Save previous solutions for convergence check
-            let mut encoder = self.ctx.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Copy Solutions Encoder"),
-            });
+            let mut encoder =
+                self.ctx
+                    .device()
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("Copy Solutions Encoder"),
+                    });
             let sol_size = (num_sweeps * num_nodes * std::mem::size_of::<f32>()) as u64;
             encoder.copy_buffer_to_buffer(&state.solutions, 0, &state.prev_solutions, 0, sol_size);
             self.ctx.queue().submit(std::iter::once(encoder.finish()));
@@ -1089,11 +1212,15 @@ impl GpuNewtonRaphson {
 
         log::info!(
             "Chunking large sweep: {} sweeps into chunks of {} ({}x{}={} nnz per matrix)",
-            num_sweeps, chunk_size, num_nodes, num_nodes, nnz
+            num_sweeps,
+            chunk_size,
+            num_nodes,
+            num_nodes,
+            nnz
         );
 
         let start_time = std::time::Instant::now();
-        let num_chunks = (num_sweeps + chunk_size - 1) / chunk_size;
+        let num_chunks = num_sweeps.div_ceil(chunk_size);
 
         // Allocate result storage
         let mut all_solutions = Vec::with_capacity(num_sweeps * num_nodes);
@@ -1109,7 +1236,10 @@ impl GpuNewtonRaphson {
 
             log::debug!(
                 "Processing chunk {}/{}: sweeps {}..{}",
-                chunk_idx + 1, num_chunks, start, end
+                chunk_idx + 1,
+                num_chunks,
+                start,
+                end
             );
 
             // Extract initial guess for this chunk if provided
@@ -1131,7 +1261,8 @@ impl GpuNewtonRaphson {
 
         log::info!(
             "Chunked sweep complete: {} chunks in {:?}",
-            num_chunks, start_time.elapsed()
+            num_chunks,
+            start_time.elapsed()
         );
 
         Ok(GpuNrResult {
@@ -1151,11 +1282,8 @@ impl GpuNewtonRaphson {
         use crate::memory::GpuMemoryCalculator;
 
         let memory_calc = GpuMemoryCalculator::from_context(&self.ctx);
-        let chunk_size = memory_calc.chunk_size(
-            num_sweeps,
-            topology.csr_structure.nnz,
-            topology.num_nodes,
-        );
+        let chunk_size =
+            memory_calc.chunk_size(num_sweeps, topology.csr_structure.nnz, topology.num_nodes);
         chunk_size < num_sweeps
     }
 
@@ -1171,11 +1299,7 @@ impl GpuNewtonRaphson {
         use crate::memory::GpuMemoryCalculator;
 
         let memory_calc = GpuMemoryCalculator::from_context(&self.ctx);
-        memory_calc.requirements(
-            num_sweeps,
-            topology.csr_structure.nnz,
-            topology.num_nodes,
-        )
+        memory_calc.requirements(num_sweeps, topology.csr_structure.nnz, topology.num_nodes)
     }
 
     // Helper methods
@@ -1207,8 +1331,16 @@ impl GpuNewtonRaphson {
     fn collect_mosfet_stamps(
         &self,
         topology: &GpuCircuitTopology,
-    ) -> (Vec<ConductanceStamp>, Vec<ConductanceStamp>, Vec<CurrentStamp>) {
-        let gds_stamps: Vec<_> = topology.mosfets.iter().map(|m| m.stamps.gds_stamp).collect();
+    ) -> (
+        Vec<ConductanceStamp>,
+        Vec<ConductanceStamp>,
+        Vec<CurrentStamp>,
+    ) {
+        let gds_stamps: Vec<_> = topology
+            .mosfets
+            .iter()
+            .map(|m| m.stamps.gds_stamp)
+            .collect();
         let gm_stamps: Vec<_> = topology.mosfets.iter().map(|m| m.stamps.gm_stamp).collect();
         let id_stamps: Vec<_> = topology.mosfets.iter().map(|m| m.stamps.id_stamp).collect();
         (gds_stamps, gm_stamps, id_stamps)
@@ -1296,11 +1428,17 @@ impl GpuNewtonRaphson {
 
         // Use first MOSFET's params
         let params = &topology.mosfets[0].params;
-        let results = self.mosfet_eval.evaluate(params, &vgs_all, &vds_all, &vbs_all)?;
+        let results = self
+            .mosfet_eval
+            .evaluate(params, &vgs_all, &vds_all, &vbs_all)?;
         Ok((results, vgs_all, vds_all))
     }
 
-    fn replicate_linear_values(&self, topology: &GpuCircuitTopology, num_sweeps: usize) -> Vec<f32> {
+    fn replicate_linear_values(
+        &self,
+        topology: &GpuCircuitTopology,
+        num_sweeps: usize,
+    ) -> Vec<f32> {
         let nnz = topology.csr_structure.nnz;
         let mut values = vec![0.0f32; num_sweeps * nnz];
         for sweep in 0..num_sweeps {
@@ -1441,6 +1579,7 @@ impl GpuNewtonRaphson {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn add_mosfet_currents(
         &self,
         results: &[MosfetEvalResult],
@@ -1680,25 +1819,37 @@ mod tests {
 
         // Create solutions buffer with initial values
         let initial = vec![1.0f32, 2.0, 3.0, 4.0]; // [sweep0_n0, sweep0_n1, sweep1_n0, sweep1_n1]
-        let solutions = ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Test Solutions"),
-            contents: bytemuck::cast_slice(&initial),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-        });
+        let solutions = ctx
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Test Solutions"),
+                contents: bytemuck::cast_slice(&initial),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            });
 
         let delta_x = vec![0.1f32, 0.2, 0.3, 0.4];
         let active_mask_data = vec![1u32, 1]; // Both sweeps active
-        let active_mask = ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Active Mask"),
-            contents: bytemuck::cast_slice(&active_mask_data),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let active_mask = ctx
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Active Mask"),
+                contents: bytemuck::cast_slice(&active_mask_data),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
 
         let pn_flags = vec![0u32; num_nodes]; // No limiting
         let limit_params = VoltageLimitParams::default();
 
         update
-            .update(&solutions, &delta_x, &active_mask, &pn_flags, num_sweeps, num_nodes, &limit_params)
+            .update(
+                &solutions,
+                &delta_x,
+                &active_mask,
+                &pn_flags,
+                num_sweeps,
+                num_nodes,
+                &limit_params,
+            )
             .unwrap();
 
         // Read back results
@@ -1709,10 +1860,18 @@ mod tests {
             mapped_at_creation: false,
         });
 
-        let mut encoder = ctx.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Copy Encoder"),
-        });
-        encoder.copy_buffer_to_buffer(&solutions, 0, &staging, 0, (num_sweeps * num_nodes * 4) as u64);
+        let mut encoder = ctx
+            .device()
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Copy Encoder"),
+            });
+        encoder.copy_buffer_to_buffer(
+            &solutions,
+            0,
+            &staging,
+            0,
+            (num_sweeps * num_nodes * 4) as u64,
+        );
         ctx.queue().submit(std::iter::once(encoder.finish()));
 
         let buffer_slice = staging.slice(..);
@@ -1729,10 +1888,26 @@ mod tests {
         staging.unmap();
 
         // Check results: x_new = x_old + delta_x
-        assert!((results[0] - 1.1).abs() < 1e-5, "results[0] = {}", results[0]);
-        assert!((results[1] - 2.2).abs() < 1e-5, "results[1] = {}", results[1]);
-        assert!((results[2] - 3.3).abs() < 1e-5, "results[2] = {}", results[2]);
-        assert!((results[3] - 4.4).abs() < 1e-5, "results[3] = {}", results[3]);
+        assert!(
+            (results[0] - 1.1).abs() < 1e-5,
+            "results[0] = {}",
+            results[0]
+        );
+        assert!(
+            (results[1] - 2.2).abs() < 1e-5,
+            "results[1] = {}",
+            results[1]
+        );
+        assert!(
+            (results[2] - 3.3).abs() < 1e-5,
+            "results[2] = {}",
+            results[2]
+        );
+        assert!(
+            (results[3] - 4.4).abs() < 1e-5,
+            "results[3] = {}",
+            results[3]
+        );
     }
 
     #[test]
@@ -1753,37 +1928,48 @@ mod tests {
         // Sweep 0: converged (small diff)
         // Sweep 1: not converged (large diff)
         // Sweep 2: converged
-        let solutions = ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Solutions"),
-            contents: bytemuck::cast_slice(&[
-                1.0f32, 2.0,     // sweep 0
-                5.0, 6.0,        // sweep 1
-                0.001, 0.002,    // sweep 2
-            ]),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let solutions = ctx
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Solutions"),
+                contents: bytemuck::cast_slice(&[
+                    1.0f32, 2.0, // sweep 0
+                    5.0, 6.0, // sweep 1
+                    0.001, 0.002, // sweep 2
+                ]),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
 
-        let prev_solutions = ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Prev Solutions"),
-            contents: bytemuck::cast_slice(&[
-                1.0000001f32, 2.0000001,  // sweep 0: tiny diff
-                5.1, 6.1,                  // sweep 1: 0.1 diff
-                0.001, 0.002,              // sweep 2: no diff
-            ]),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let prev_solutions = ctx
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Prev Solutions"),
+                contents: bytemuck::cast_slice(&[
+                    1.0000001f32,
+                    2.0000001, // sweep 0: tiny diff
+                    5.1,
+                    6.1, // sweep 1: 0.1 diff
+                    0.001,
+                    0.002, // sweep 2: no diff
+                ]),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
 
-        let active_mask = ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Active Mask"),
-            contents: bytemuck::cast_slice(&[1u32, 1, 1]),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-        });
+        let active_mask = ctx
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Active Mask"),
+                contents: bytemuck::cast_slice(&[1u32, 1, 1]),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            });
 
-        let iteration_counts = ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Iteration Counts"),
-            contents: bytemuck::cast_slice(&[0u32, 0, 0]),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-        });
+        let iteration_counts = ctx
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Iteration Counts"),
+                contents: bytemuck::cast_slice(&[0u32, 0, 0]),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            });
 
         let active_count = checker
             .check(
@@ -1799,7 +1985,11 @@ mod tests {
             .unwrap();
 
         // Should have 1 active (sweep 1 not converged)
-        assert_eq!(active_count, 1, "Expected 1 active sweep, got {}", active_count);
+        assert_eq!(
+            active_count, 1,
+            "Expected 1 active sweep, got {}",
+            active_count
+        );
     }
 
     #[test]
@@ -1831,13 +2021,13 @@ mod tests {
         // Linear current source: Is = 5V/1000 = 5mA (Norton equivalent)
         let topology = GpuCircuitTopology {
             csr_structure: BatchedCsrMatrix::new(
-                1,                 // 1 node
-                vec![0, 1],        // 1 row with 1 entry
-                vec![0],           // diagonal entry
+                1,          // 1 node
+                vec![0, 1], // 1 row with 1 entry
+                vec![0],    // diagonal entry
             ),
             num_nodes: 1,
-            linear_csr_values: vec![1.0 / 1000.0],  // Gs = 1mS
-            linear_rhs: vec![5.0 / 1000.0],          // Is = 5mA (Norton current source into node)
+            linear_csr_values: vec![1.0 / 1000.0], // Gs = 1mS
+            linear_rhs: vec![5.0 / 1000.0],        // Is = 5mA (Norton current source into node)
             mosfets: vec![],
             diodes: vec![DiodeDeviceInfo {
                 params: GpuDiodeParams::default(),
@@ -1848,7 +2038,7 @@ mod tests {
                 },
                 stamps: DiodeStampLocations {
                     gd_stamp: ConductanceStamp {
-                        idx_ii: 0,         // (0,0) - the only entry
+                        idx_ii: 0, // (0,0) - the only entry
                         idx_ij: u32::MAX,
                         idx_ji: u32::MAX,
                         idx_jj: u32::MAX,
@@ -1867,8 +2057,10 @@ mod tests {
 
         // Check the result
         let vd = result.solutions[0]; // node 0 voltage (diode voltage)
-        println!("Diode test result: V0 = {:.4}V, converged = {}, iterations = {}",
-                 vd, result.converged[0], result.iterations[0]);
+        println!(
+            "Diode test result: V0 = {:.4}V, converged = {}, iterations = {}",
+            vd, result.converged[0], result.iterations[0]
+        );
 
         assert!(result.converged[0], "Circuit should converge");
 

@@ -355,10 +355,11 @@ C1 2 0 1u
     // Solution vector: [V1, V2, I_V1]
     let dc_solution = DVector::from_vec(vec![5.0, 0.0, 0.0]);
 
+    let mut inductors = vec![];
     let result = solve_transient(
         &stamper,
         &mut capacitors,
-        &mut vec![],
+        &mut inductors,
         &params,
         &dc_solution,
     )
@@ -1297,7 +1298,8 @@ fn test_tran_rl_time_constant() {
         method: IntegrationMethod::Trapezoidal,
     };
 
-    let result = solve_transient(&stamper, &mut vec![], &mut inds, &params, &dc)
+    let mut caps = vec![];
+    let result = solve_transient(&stamper, &mut caps, &mut inds, &params, &dc)
         .expect("transient solve failed");
 
     // At t = τ, current should be ~63.2% of final value
@@ -1939,7 +1941,8 @@ fn test_golden_tran_rc_charging() {
             method: IntegrationMethod::Trapezoidal,
         };
 
-        let result = solve_transient(&stamper, &mut caps, &mut vec![], &tran_params, &dc)
+        let mut inds = vec![];
+        let result = solve_transient(&stamper, &mut caps, &mut inds, &tran_params, &dc)
             .expect("transient solve failed");
 
         // Compare at each golden data point
@@ -3006,10 +3009,11 @@ C1 2 0 100n
     // Initial condition: capacitor at 0V
     let dc_solution = DVector::from_vec(vec![0.0, 0.0, 0.0]); // V1, V2, I_V1
 
+    let mut inductors = vec![];
     let result = solve_transient(
         &stamper,
         &mut capacitors,
-        &mut vec![],
+        &mut inductors,
         &params,
         &dc_solution,
     )
@@ -3022,7 +3026,7 @@ C1 2 0 100n
     for point in &result.points {
         let v_cap = point.solution[1]; // Node 2 (capacitor)
         assert!(
-            v_cap >= -0.5 && v_cap <= 5.5,
+            (-0.5..=5.5).contains(&v_cap),
             "At t={:.2e}s: V(cap)={:.3}V should be bounded [0, 5]",
             point.time,
             v_cap
@@ -3679,10 +3683,11 @@ R1 2 0 10k
 
     let dc_solution = DVector::from_vec(vec![0.0, 0.0, 0.0]);
 
+    let mut inductors = vec![];
     let result = solve_transient(
         &stamper,
         &mut capacitors,
-        &mut vec![],
+        &mut inductors,
         &params,
         &dc_solution,
     )
@@ -3877,18 +3882,17 @@ J1 2 0 0 JMOD
 "#;
 
     let netlist = parse(netlist_str).expect("Parse failed");
-    assert!(netlist.has_nonlinear_devices(), "Should have nonlinear JFET");
+    assert!(
+        netlist.has_nonlinear_devices(),
+        "Should have nonlinear JFET"
+    );
 
     let solution = solve_dc_nonlinear(&netlist).expect("DC solve failed");
 
     // With Vgs=0, Vov=|Vto|=2V, Ids=beta*Vov^2=0.4mA
     // V(2) = VDD - Ids*RD = 15 - 0.4mA*10k = 11V
     let v2 = solution.voltage(NodeId::new(2));
-    assert!(
-        (v2 - 11.0).abs() < 0.5,
-        "V(2) = {} (expected ~11V)",
-        v2
-    );
+    assert!((v2 - 11.0).abs() < 0.5, "V(2) = {} (expected ~11V)", v2);
 }
 
 /// Test N-channel JFET in cutoff region
@@ -3936,8 +3940,16 @@ RS 3 0 2k
     let v3 = solution.voltage(NodeId::new(3));
 
     // Should establish a stable operating point
-    assert!(v2 > 10.0 && v2 < 20.0, "V(2) = {} should be between 10V and 20V", v2);
-    assert!(v3 > 0.0 && v3 < 5.0, "V(3) = {} should be between 0V and 5V", v3);
+    assert!(
+        v2 > 10.0 && v2 < 20.0,
+        "V(2) = {} should be between 10V and 20V",
+        v2
+    );
+    assert!(
+        v3 > 0.0 && v3 < 5.0,
+        "V(3) = {} should be between 0V and 5V",
+        v3
+    );
 }
 
 /// Test P-channel JFET
@@ -3956,11 +3968,7 @@ J1 2 0 0 PMOD
 
     // PJF mirror of NJF
     let v2 = solution.voltage(NodeId::new(2));
-    assert!(
-        (v2 - (-11.0)).abs() < 0.5,
-        "V(2) = {} (expected ~-11V)",
-        v2
-    );
+    assert!((v2 - (-11.0)).abs() < 0.5, "V(2) = {} (expected ~-11V)", v2);
 }
 
 // ============================================================================
@@ -4063,7 +4071,7 @@ Q1 2 3 0 PMOD
     // PNP: with small Is, current is low, V(2) is close to VEE
     let v2 = solution.voltage(NodeId::new(2));
     assert!(
-        v2 >= -10.0 && v2 < 0.0,
+        (-10.0..0.0).contains(&v2),
         "V(2) = {} should be between -10V and 0V",
         v2
     );
@@ -4120,11 +4128,7 @@ Q1 2 3 0 QMOD
 
     // Should have valid operating point with Early effect
     let v2 = solution.voltage(NodeId::new(2));
-    assert!(
-        v2 > 0.0 && v2 < 10.0,
-        "V(2) = {} should be valid",
-        v2
-    );
+    assert!(v2 > 0.0 && v2 < 10.0, "V(2) = {} should be valid", v2);
 }
 
 /// Test BJT with moderate base drive
@@ -4194,7 +4198,10 @@ R1 2 0 1k
     let netlist = parse(netlist_str).expect("Parse failed");
     // In DC, inductors short to ground, so V(2) = 0
     // This just tests that the circuit parses correctly
-    assert!(netlist.num_devices() >= 4, "Should parse transformer circuit");
+    assert!(
+        netlist.num_devices() >= 4,
+        "Should parse transformer circuit"
+    );
 }
 
 // ============================================================================
@@ -4211,11 +4218,11 @@ fn test_ac_transformer_1to1() {
     //          Output: L2 -- RL(1k) -- GND
     // Nodes: 1=V1+, 2=L1+/RS-, 3=L2+/output
     struct TransformerStamper {
-        rs: f64,   // Source resistance
-        l1: f64,   // Primary inductance
-        l2: f64,   // Secondary inductance
-        k: f64,    // Coupling coefficient
-        rl: f64,   // Load resistance
+        rs: f64, // Source resistance
+        l1: f64, // Primary inductance
+        l2: f64, // Secondary inductance
+        k: f64,  // Coupling coefficient
+        rl: f64, // Load resistance
     }
 
     impl AcStamper for TransformerStamper {
@@ -4257,9 +4264,9 @@ fn test_ac_transformer_1to1() {
 
     let stamper = TransformerStamper {
         rs: 1.0,
-        l1: 1e-3,  // 1mH
-        l2: 1e-3,  // 1mH
-        k: 1.0,    // Ideal coupling
+        l1: 1e-3, // 1mH
+        l2: 1e-3, // 1mH
+        k: 1.0,   // Ideal coupling
         rl: 1000.0,
     };
 
@@ -4338,8 +4345,8 @@ fn test_ac_transformer_2to1_stepdown() {
 
     let stamper = StepdownStamper {
         rs: 1.0,
-        l1: 4e-3,  // 4mH
-        l2: 1e-3,  // 1mH -> n = 2
+        l1: 4e-3, // 4mH
+        l2: 1e-3, // 1mH -> n = 2
         k: 0.99,
         rl: 100.0,
     };
@@ -4405,8 +4412,8 @@ fn test_ac_transformer_1to2_stepup() {
 
     let stamper = StepupStamper {
         rs: 1.0,
-        l1: 1e-3,  // 1mH
-        l2: 4e-3,  // 4mH -> n = 2 step-up
+        l1: 1e-3, // 1mH
+        l2: 4e-3, // 4mH -> n = 2 step-up
         k: 0.99,
         rl: 1000.0,
     };
@@ -4471,9 +4478,9 @@ fn test_ac_loosely_coupled() {
 
     let stamper = LooseCouplingStamper {
         rs: 10.0,
-        l1: 10e-3,  // 10mH
-        l2: 10e-3,  // 10mH
-        k: 0.5,     // Loose coupling
+        l1: 10e-3, // 10mH
+        l2: 10e-3, // 10mH
+        k: 0.5,    // Loose coupling
         rl: 100.0,
     };
 
@@ -4507,12 +4514,12 @@ fn test_ac_loosely_coupled() {
 #[test]
 fn test_dc_sweep_bjt_ic_vs_vbe() {
     // Thermal voltage at room temperature
-    let vt = 0.02585; // 26mV at 300K
-    let is = 1e-15;   // Saturation current
-    let bf = 100.0;   // Forward beta
+    let vt: f64 = 0.02585; // 26mV at 300K
+    let is = 1e-15; // Saturation current
+    let bf = 100.0; // Forward beta
 
     // Sweep Vbe from 0.5V to 0.75V
-    let vbe_values = [0.50, 0.55, 0.60, 0.65, 0.70, 0.75];
+    let vbe_values: [f64; 6] = [0.50, 0.55, 0.60, 0.65, 0.70, 0.75];
 
     for &vbe in &vbe_values {
         let netlist_str = format!(
@@ -4537,7 +4544,7 @@ Q1 3 2 0 QMOD
         let ic = (10.0 - vc) / 1000.0;
 
         // Expected Ic from Ebers-Moll: Ic ≈ Is * exp(Vbe/Vt) (ignoring -1 term for Vbe >> Vt)
-        let ic_expected: f64 = is * (vbe as f64 / vt).exp();
+        let ic_expected: f64 = is * (vbe / vt).exp();
 
         // Check that Ic is in the right ballpark (within factor of 3)
         // Due to numerical precision and Early effect, exact match is difficult
@@ -4546,7 +4553,10 @@ Q1 3 2 0 QMOD
             assert!(
                 ratio > 0.3 && ratio < 3.0,
                 "At Vbe={:.2}V: Ic={:.2e}A (expected ~{:.2e}A, ratio={:.2})",
-                vbe, ic, ic_expected, ratio
+                vbe,
+                ic,
+                ic_expected,
+                ratio
             );
         }
 
@@ -4555,7 +4565,8 @@ Q1 3 2 0 QMOD
             assert!(
                 ic > 1e-12,
                 "At Vbe={:.2}V: Ic should be positive: {:.2e}A",
-                vbe, ic
+                vbe,
+                ic
             );
         }
     }
@@ -4609,7 +4620,10 @@ Q1 3 2 0 QMOD
             ic_curr >= ic_prev * 0.95,
             "Early effect: Ic should not decrease significantly. \
              At Vce={:.1}V: Ic={:.2e}A, at Vce={:.1}V: Ic={:.2e}A",
-            vce_prev, ic_prev, vce_curr, ic_curr
+            vce_prev,
+            ic_prev,
+            vce_curr,
+            ic_curr
         );
     }
 }
@@ -4618,7 +4632,7 @@ Q1 3 2 0 QMOD
 /// Drain current should follow: Ids = β(Vgs - Vto)² for Vgs > Vto
 #[test]
 fn test_dc_sweep_jfet_ids_vs_vgs() {
-    let vto = -2.0;  // Threshold voltage for N-channel JFET
+    let vto = -2.0; // Threshold voltage for N-channel JFET
     let beta = 1e-4; // Transconductance parameter
 
     // Sweep Vgs from -1.5V to 0V (above Vto = -2V)
@@ -4645,18 +4659,16 @@ J1 3 2 0 JMOD
 
         // Expected Ids in saturation: Ids = β(Vgs - Vto)²
         let vov = vgs - vto; // Overdrive voltage
-        let ids_expected: f64 = if vov > 0.0 {
-            beta * vov * vov
-        } else {
-            0.0
-        };
+        let ids_expected: f64 = if vov > 0.0 { beta * vov * vov } else { 0.0 };
 
         // Check quadratic relationship (within 20% or 1µA)
         let tol = ids_expected.abs() * 0.2 + 1e-6;
         assert!(
             (ids - ids_expected).abs() < tol,
             "At Vgs={:.1}V: Ids={:.2e}A (expected {:.2e}A)",
-            vgs, ids, ids_expected
+            vgs,
+            ids,
+            ids_expected
         );
     }
 }
@@ -4665,8 +4677,8 @@ J1 3 2 0 JMOD
 /// At low Vds: triode region, at high Vds: saturation
 #[test]
 fn test_dc_sweep_jfet_ids_vs_vds() {
-    let vgs = 0.0;   // Gate-source voltage
-    let vto = -2.0;  // Threshold voltage
+    let vgs = 0.0; // Gate-source voltage
+    let vto = -2.0; // Threshold voltage
     let beta = 1e-4; // Transconductance parameter
     let vov = vgs - vto; // 2.0V overdrive
 
@@ -4712,7 +4724,9 @@ J1 3 2 0 JMOD
             assert!(
                 ratio > 0.5 && ratio < 2.0,
                 "At Vds={:.1}V (saturation): Ids={:.2e}A (expected ~{:.2e}A)",
-                vds, ids, ids_sat
+                vds,
+                ids,
+                ids_sat
             );
         }
     }
@@ -4726,7 +4740,8 @@ J1 3 2 0 JMOD
         assert!(
             ids_curr >= ids_prev * 0.9,
             "Ids should not decrease. At Vds={:.1}V: Ids={:.2e}A",
-            vds_curr, ids_curr
+            vds_curr,
+            ids_curr
         );
     }
 }
@@ -4749,11 +4764,11 @@ fn test_ac_bjt_common_emitter_gain() {
 
     struct BjtCeStamper {
         // Small-signal parameters at operating point
-        gm: f64,   // transconductance
-        gpi: f64,  // base input conductance (gm/beta)
-        go: f64,   // output conductance (Early effect)
-        rc: f64,   // collector load resistance
-        rs: f64,   // source resistance
+        gm: f64,  // transconductance
+        gpi: f64, // base input conductance (gm/beta)
+        go: f64,  // output conductance (Early effect)
+        rc: f64,  // collector load resistance
+        rs: f64,  // source resistance
     }
 
     impl AcStamper for BjtCeStamper {
@@ -4793,17 +4808,23 @@ fn test_ac_bjt_common_emitter_gain() {
 
     // Operating point: Ic ≈ 1mA for easier numbers
     let vt = 0.026; // Thermal voltage
-    let ic = 1e-3;  // 1mA collector current
+    let ic = 1e-3; // 1mA collector current
     let beta = 100.0;
     let vaf = 100.0; // Early voltage
 
-    let gm = ic / vt;           // ≈ 38.5 mS
-    let gpi = gm / beta;        // ≈ 0.385 mS
-    let go = ic / vaf;          // ≈ 10 µS
-    let rc = 2000.0;            // 2k load
-    let rs = 1000.0;            // 1k source resistance
+    let gm = ic / vt; // ≈ 38.5 mS
+    let gpi = gm / beta; // ≈ 0.385 mS
+    let go = ic / vaf; // ≈ 10 µS
+    let rc = 2000.0; // 2k load
+    let rs = 1000.0; // 1k source resistance
 
-    let stamper = BjtCeStamper { gm, gpi, go, rc, rs };
+    let stamper = BjtCeStamper {
+        gm,
+        gpi,
+        go,
+        rc,
+        rs,
+    };
 
     // Test at 1kHz (mid-band, no capacitor effects)
     let params = AcParams {
@@ -4843,10 +4864,10 @@ fn test_ac_jfet_common_source_gain() {
     // - gm = 2 * sqrt(beta * Ids) at operating point
 
     struct JfetCsStamper {
-        gm: f64,   // transconductance
-        gds: f64,  // output conductance
-        rd: f64,   // drain load resistance
-        rs: f64,   // source resistance
+        gm: f64,  // transconductance
+        gds: f64, // output conductance
+        rd: f64,  // drain load resistance
+        rs: f64,  // source resistance
     }
 
     impl AcStamper for JfetCsStamper {
@@ -4883,10 +4904,10 @@ fn test_ac_jfet_common_source_gain() {
     // JFET parameters: VTO=-2V, BETA=1e-4
     // At Vgs=0, Ids = beta*(Vgs-Vto)^2 = 1e-4 * 4 = 0.4mA
     // gm = 2*beta*(Vgs-Vto) = 2*1e-4*2 = 0.4mS
-    let gm = 0.4e-3;    // 0.4 mS
-    let gds = 1e-6;     // Small output conductance (lambda≈0)
-    let rd = 5000.0;    // 5k load
-    let rs = 1000.0;    // 1k source resistance
+    let gm = 0.4e-3; // 0.4 mS
+    let gds = 1e-6; // Small output conductance (lambda≈0)
+    let rd = 5000.0; // 5k load
+    let rs = 1000.0; // 1k source resistance
 
     let stamper = JfetCsStamper { gm, gds, rd, rs };
 
@@ -4919,11 +4940,11 @@ fn test_ac_coupled_lc_resonator() {
     // Verify that the coupled inductor AC stamping produces valid frequency response
 
     struct CoupledResonatorStamper {
-        l: f64,   // Inductance (both tanks)
-        c: f64,   // Capacitance (both tanks)
-        k: f64,   // Coupling coefficient
-        rs: f64,  // Source resistance
-        rl: f64,  // Load resistance
+        l: f64,  // Inductance (both tanks)
+        c: f64,  // Capacitance (both tanks)
+        k: f64,  // Coupling coefficient
+        rs: f64, // Source resistance
+        rl: f64, // Load resistance
     }
 
     impl AcStamper for CoupledResonatorStamper {
@@ -4966,9 +4987,9 @@ fn test_ac_coupled_lc_resonator() {
         }
     }
 
-    let l = 100e-6;  // 100µH
-    let c = 2.5e-9;  // 2.5nF
-    let k = 0.5;     // Moderate coupling for more energy transfer
+    let l = 100e-6; // 100µH
+    let c = 2.5e-9; // 2.5nF
+    let k = 0.5; // Moderate coupling for more energy transfer
     let rs = 50.0;
     let rl = 50.0;
 
@@ -4999,19 +5020,22 @@ fn test_ac_coupled_lc_resonator() {
         assert!(
             gain_db.is_finite(),
             "Coupled resonator at {:.0}kHz: gain should be finite, got {}",
-            freq / 1000.0, gain_db
+            freq / 1000.0,
+            gain_db
         );
         assert!(
             phase_deg.is_finite(),
             "Coupled resonator at {:.0}kHz: phase should be finite, got {}",
-            freq / 1000.0, phase_deg
+            freq / 1000.0,
+            phase_deg
         );
 
         // Output should exist (not infinitely attenuated)
         assert!(
             gain_db > -60.0,
             "Coupled resonator at {:.0}kHz: gain = {:.1}dB (too low)",
-            freq / 1000.0, gain_db
+            freq / 1000.0,
+            gain_db
         );
     }
 }
@@ -5038,7 +5062,10 @@ RL 1 3 5k
 "#;
 
     let netlist = parse(netlist_str).expect("Parse failed");
-    assert!(netlist.has_nonlinear_devices(), "Should have nonlinear BJTs");
+    assert!(
+        netlist.has_nonlinear_devices(),
+        "Should have nonlinear BJTs"
+    );
 
     let solution = solve_dc_nonlinear(&netlist).expect("DC solve failed");
 
@@ -5088,16 +5115,8 @@ VEE 6 0 DC -10
 
     // Tail current: Itail = (0 - Vbe - VEE) / REE ≈ (0 - 0.7 + 10) / 10k ≈ 0.93mA
     // Each transistor gets ~0.465mA, so Vc = VCC - Ic*RC = 10 - 0.465mA*5k ≈ 7.7V
-    assert!(
-        v2 > 6.0 && v2 < 9.0,
-        "V(2) = {} (expected ~7.5V)",
-        v2
-    );
-    assert!(
-        v3 > 6.0 && v3 < 9.0,
-        "V(3) = {} (expected ~7.5V)",
-        v3
-    );
+    assert!(v2 > 6.0 && v2 < 9.0, "V(2) = {} (expected ~7.5V)", v2);
+    assert!(v3 > 6.0 && v3 < 9.0, "V(3) = {} (expected ~7.5V)", v3);
 
     // With balanced inputs, outputs should be approximately equal
     let diff = (v2 - v3).abs();
@@ -5124,7 +5143,10 @@ RS 3 0 1k
 "#;
 
     let netlist = parse(netlist_str).expect("Parse failed");
-    assert!(netlist.has_nonlinear_devices(), "Should have nonlinear JFET");
+    assert!(
+        netlist.has_nonlinear_devices(),
+        "Should have nonlinear JFET"
+    );
 
     let solution = solve_dc_nonlinear(&netlist).expect("DC solve failed");
 
@@ -5164,11 +5186,11 @@ fn test_ac_transformer_coupled_amplifier() {
     // Primary driven by voltage source through Rs, secondary drives load RL
 
     struct TransformerAmpStamper {
-        rs: f64,    // Source resistance
-        l1: f64,    // Primary inductance
-        l2: f64,    // Secondary inductance
-        k: f64,     // Coupling coefficient
-        rl: f64,    // Load resistance
+        rs: f64, // Source resistance
+        l1: f64, // Primary inductance
+        l2: f64, // Secondary inductance
+        k: f64,  // Coupling coefficient
+        rl: f64, // Load resistance
     }
 
     impl AcStamper for TransformerAmpStamper {
@@ -5212,11 +5234,11 @@ fn test_ac_transformer_coupled_amplifier() {
     }
 
     // 1:2 step-up transformer
-    let l1 = 1e-3;    // 1mH primary
-    let l2 = 4e-3;    // 4mH secondary (N2/N1 = sqrt(L2/L1) = 2)
-    let k = 0.95;     // High but not ideal coupling
+    let l1 = 1e-3; // 1mH primary
+    let l2 = 4e-3; // 4mH secondary (N2/N1 = sqrt(L2/L1) = 2)
+    let k = 0.95; // High but not ideal coupling
     let rs = 50.0;
-    let rl = 200.0;   // 200 ohm load (reflects to 50 ohm at primary)
+    let rl = 200.0; // 200 ohm load (reflects to 50 ohm at primary)
 
     let stamper = TransformerAmpStamper { rs, l1, l2, k, rl };
 
@@ -5224,7 +5246,7 @@ fn test_ac_transformer_coupled_amplifier() {
     let params = AcParams {
         sweep_type: AcSweepType::Linear,
         num_points: 1,
-        fstart: 10_000.0,  // 10 kHz
+        fstart: 10_000.0, // 10 kHz
         fstop: 10_000.0,
     };
 
@@ -5255,9 +5277,9 @@ fn test_ac_transformer_coupled_amplifier() {
 #[test]
 fn test_ac_nmos_common_source_gain() {
     struct NmosCsStamper {
-        gm: f64,   // transconductance
-        gds: f64,  // output conductance
-        rd: f64,   // drain load resistance
+        gm: f64,  // transconductance
+        gds: f64, // output conductance
+        rd: f64,  // drain load resistance
     }
 
     impl AcStamper for NmosCsStamper {
@@ -5294,9 +5316,9 @@ fn test_ac_nmos_common_source_gain() {
     // gm = Kp * (W/L) * (Vgs-Vth) = 1mA/V² * 1.3V = 1.3mS
     // gds = lambda * Ids = 0.02 * 0.845mA = 17µS
 
-    let gm = 1.3e-3;    // 1.3 mS
-    let gds = 17e-6;    // 17 µS
-    let rd = 2000.0;    // 2k load
+    let gm = 1.3e-3; // 1.3 mS
+    let gds = 17e-6; // 17 µS
+    let rd = 2000.0; // 2k load
 
     let stamper = NmosCsStamper { gm, gds, rd };
 
@@ -5418,7 +5440,10 @@ fn test_bsim3_nmos_saturation() {
         expected_ids,
         tol * 100.0
     );
-    println!("Test passes if spicier result is within {:.0}% of ngspice", tol * 100.0);
+    println!(
+        "Test passes if spicier result is within {:.0}% of ngspice",
+        tol * 100.0
+    );
 }
 
 /// Test: BSIM3 NMOS in linear/triode region
@@ -5572,7 +5597,11 @@ Vgs g 0 DC 1
 "#;
 
     let result = parse_full(netlist_str);
-    assert!(result.is_ok(), "BSIM3 model parsing failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "BSIM3 model parsing failed: {:?}",
+        result.err()
+    );
 
     let parse_result = result.unwrap();
     assert!(
@@ -5580,7 +5609,10 @@ Vgs g 0 DC 1
         "Netlist should have devices"
     );
 
-    println!("BSIM3 model parsing: {} devices found", parse_result.netlist.devices().len());
+    println!(
+        "BSIM3 model parsing: {} devices found",
+        parse_result.netlist.devices().len()
+    );
 }
 
 /// Test: BSIM3 short-channel effects

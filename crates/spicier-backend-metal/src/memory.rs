@@ -155,12 +155,7 @@ impl GpuMemoryCalculator {
     }
 
     /// Check if sweep fits in a single allocation for all buffers.
-    pub fn fits_single_allocation(
-        &self,
-        num_sweeps: usize,
-        nnz: usize,
-        num_nodes: usize,
-    ) -> bool {
+    pub fn fits_single_allocation(&self, num_sweeps: usize, nnz: usize, num_nodes: usize) -> bool {
         let total = self.total_memory_needed(num_sweeps, nnz, num_nodes);
         total <= self.effective_max_size()
     }
@@ -207,7 +202,7 @@ impl GpuMemoryCalculator {
     /// Calculate number of chunks needed for a sweep.
     pub fn num_chunks(&self, num_sweeps: usize, nnz: usize, num_nodes: usize) -> usize {
         let chunk = self.chunk_size(num_sweeps, nnz, num_nodes);
-        (num_sweeps + chunk - 1) / chunk
+        num_sweeps.div_ceil(chunk)
     }
 
     /// Get the configured max buffer size.

@@ -156,6 +156,7 @@ impl Waveform {
 }
 
 /// Evaluate a pulse waveform at time t.
+#[allow(clippy::too_many_arguments)]
 fn eval_pulse(v1: f64, v2: f64, td: f64, tr: f64, tf: f64, pw: f64, per: f64, t: f64) -> f64 {
     if t < td {
         return v1;

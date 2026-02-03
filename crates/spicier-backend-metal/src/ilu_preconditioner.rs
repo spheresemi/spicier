@@ -17,9 +17,9 @@
 //! the factorization and apply phases, with GPU buffer management for
 //! integration with batched GMRES.
 
+use crate::batched_spmv::BatchedCsrMatrix;
 use crate::context::WgpuContext;
 use crate::error::{Result, WgpuError};
-use crate::batched_spmv::BatchedCsrMatrix;
 use spicier_solver::{Ilu0Preconditioner, IluError, RealPreconditioner};
 use std::sync::Arc;
 
@@ -299,8 +299,8 @@ mod tests {
 
         // Verify A*y ≈ x (ILU(0) is exact for tridiagonal)
         let ay0 = 2.0 * y[0] - 1.0 * y[1];
-        let ay1 = -1.0 * y[0] + 2.0 * y[1] - 1.0 * y[2];
-        let ay2 = -1.0 * y[1] + 2.0 * y[2];
+        let ay1 = -y[0] + 2.0 * y[1] - 1.0 * y[2];
+        let ay2 = -y[1] + 2.0 * y[2];
 
         assert!((ay0 - x[0]).abs() < 1e-10);
         assert!((ay1 - x[1]).abs() < 1e-10);

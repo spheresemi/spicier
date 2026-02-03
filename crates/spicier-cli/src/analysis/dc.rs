@@ -121,7 +121,14 @@ pub fn run_dc_sweep(
         run_single_dc_sweep(netlist, &sweeps[0], print_vars, node_map, measurements)
     } else {
         // Nested sweep (2 variables)
-        run_nested_dc_sweep(netlist, &sweeps[0], &sweeps[1], print_vars, node_map, measurements)
+        run_nested_dc_sweep(
+            netlist,
+            &sweeps[0],
+            &sweeps[1],
+            print_vars,
+            node_map,
+            measurements,
+        )
     }
 }
 
@@ -370,8 +377,8 @@ pub fn run_dc_param_sweep(
     let param_name = param_sweep.source_name.to_uppercase();
 
     // Parse once to get node map and print variable info
-    let initial_result = parse_full(netlist_content)
-        .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+    let initial_result =
+        parse_full(netlist_content).map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
     let node_map = initial_result.node_map.clone();
     let num_nodes = initial_result.netlist.num_nodes();
 
@@ -440,10 +447,7 @@ pub fn run_dc_param_sweep(
     }
 
     println!();
-    println!(
-        "Parameter sweep complete ({} points).",
-        sweep_values.len()
-    );
+    println!("Parameter sweep complete ({} points).", sweep_values.len());
     println!();
 
     Ok(())

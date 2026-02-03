@@ -8,7 +8,7 @@ use spicier_batched_sweep::{BackendSelector, solve_batched_sweep_gpu};
 #[cfg(feature = "faer")]
 use spicier_batched_sweep::{BatchedLuSolver, FaerBatchedSolver, FaerSparseCachedBatchedSolver};
 #[cfg(feature = "parallel")]
-use spicier_batched_sweep::{solve_batched_sweep_parallel, ParallelSweepConfig};
+use spicier_batched_sweep::{ParallelSweepConfig, solve_batched_sweep_parallel};
 use spicier_solver::{
     ConvergenceCriteria, DispatchConfig, MonteCarloGenerator, ParameterVariation, SweepStamper,
     SweepStamperFactory,
@@ -429,43 +429,35 @@ fn bench_parallel_vs_sequential(c: &mut Criterion) {
         let parallel_config = ParallelSweepConfig::default();
 
         // Sequential (batched) benchmark
-        group.bench_with_input(
-            BenchmarkId::new("sequential", &param),
-            &(),
-            |b, _| {
-                b.iter(|| {
-                    solve_batched_sweep_gpu(
-                        &backend,
-                        &factory,
-                        &generator,
-                        &variations,
-                        &criteria,
-                        &config,
-                    )
-                    .unwrap()
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("sequential", &param), &(), |b, _| {
+            b.iter(|| {
+                solve_batched_sweep_gpu(
+                    &backend,
+                    &factory,
+                    &generator,
+                    &variations,
+                    &criteria,
+                    &config,
+                )
+                .unwrap()
+            })
+        });
 
         // Parallel benchmark
-        group.bench_with_input(
-            BenchmarkId::new("parallel", &param),
-            &(),
-            |b, _| {
-                b.iter(|| {
-                    solve_batched_sweep_parallel(
-                        &backend,
-                        &factory,
-                        &generator,
-                        &variations,
-                        &criteria,
-                        &config,
-                        &parallel_config,
-                    )
-                    .unwrap()
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("parallel", &param), &(), |b, _| {
+            b.iter(|| {
+                solve_batched_sweep_parallel(
+                    &backend,
+                    &factory,
+                    &generator,
+                    &variations,
+                    &criteria,
+                    &config,
+                    &parallel_config,
+                )
+                .unwrap()
+            })
+        });
     }
 
     group.finish();
@@ -507,23 +499,19 @@ fn bench_gpu_crossover(c: &mut Criterion) {
         #[cfg(feature = "accelerate")]
         {
             let backend = BackendSelector::prefer_accelerate();
-            group.bench_with_input(
-                BenchmarkId::new("accelerate-seq", &param),
-                &(),
-                |b, _| {
-                    b.iter(|| {
-                        solve_batched_sweep_gpu(
-                            &backend,
-                            &factory,
-                            &generator,
-                            &variations,
-                            &criteria,
-                            &config,
-                        )
-                        .unwrap()
-                    })
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("accelerate-seq", &param), &(), |b, _| {
+                b.iter(|| {
+                    solve_batched_sweep_gpu(
+                        &backend,
+                        &factory,
+                        &generator,
+                        &variations,
+                        &criteria,
+                        &config,
+                    )
+                    .unwrap()
+                })
+            });
         }
 
         // Parallel Accelerate
@@ -531,24 +519,20 @@ fn bench_gpu_crossover(c: &mut Criterion) {
         {
             let backend = BackendSelector::prefer_accelerate();
             let parallel_config = ParallelSweepConfig::default();
-            group.bench_with_input(
-                BenchmarkId::new("accelerate-par", &param),
-                &(),
-                |b, _| {
-                    b.iter(|| {
-                        solve_batched_sweep_parallel(
-                            &backend,
-                            &factory,
-                            &generator,
-                            &variations,
-                            &criteria,
-                            &config,
-                            &parallel_config,
-                        )
-                        .unwrap()
-                    })
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("accelerate-par", &param), &(), |b, _| {
+                b.iter(|| {
+                    solve_batched_sweep_parallel(
+                        &backend,
+                        &factory,
+                        &generator,
+                        &variations,
+                        &criteria,
+                        &config,
+                        &parallel_config,
+                    )
+                    .unwrap()
+                })
+            });
         }
 
         // Metal GPU
@@ -561,23 +545,19 @@ fn bench_gpu_crossover(c: &mut Criterion) {
 
             if let Ok(solver) = backend.create_solver() {
                 if solver.backend_type() == BackendType::Metal {
-                    group.bench_with_input(
-                        BenchmarkId::new("metal-gpu", &param),
-                        &(),
-                        |b, _| {
-                            b.iter(|| {
-                                solve_batched_sweep_gpu(
-                                    &backend,
-                                    &factory,
-                                    &generator,
-                                    &variations,
-                                    &criteria,
-                                    &config,
-                                )
-                                .unwrap()
-                            })
-                        },
-                    );
+                    group.bench_with_input(BenchmarkId::new("metal-gpu", &param), &(), |b, _| {
+                        b.iter(|| {
+                            solve_batched_sweep_gpu(
+                                &backend,
+                                &factory,
+                                &generator,
+                                &variations,
+                                &criteria,
+                                &config,
+                            )
+                            .unwrap()
+                        })
+                    });
                 }
             }
         }

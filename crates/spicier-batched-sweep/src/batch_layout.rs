@@ -83,7 +83,7 @@ impl BatchLayout {
     /// Align a size to the next multiple of WARP_SIZE.
     #[inline]
     pub fn align_to_warp(size: usize) -> usize {
-        (size + WARP_SIZE - 1) / WARP_SIZE * WARP_SIZE
+        size.div_ceil(WARP_SIZE) * WARP_SIZE
     }
 
     /// Get the padded row stride.

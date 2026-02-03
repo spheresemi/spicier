@@ -41,7 +41,10 @@ impl fmt::Display for WgpuError {
             WgpuError::Pipeline(msg) => write!(f, "Compute pipeline creation failed: {}", msg),
             WgpuError::InvalidDimension(msg) => write!(f, "Invalid dimension: {}", msg),
             WgpuError::Compute(msg) => write!(f, "GPU compute operation failed: {}", msg),
-            WgpuError::BufferTooLarge { required, max_buffer } => {
+            WgpuError::BufferTooLarge {
+                required,
+                max_buffer,
+            } => {
                 write!(
                     f,
                     "Sweep requires {} bytes but max buffer size is {}. Use chunking or reduce sweep size.",

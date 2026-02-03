@@ -157,44 +157,44 @@ pub use gmres::{
     GmresConfig, GmresResult, RealGmresResult, solve_gmres, solve_gmres_preconditioned,
     solve_gmres_real, solve_gmres_real_preconditioned,
 };
+pub use ilu::{ComplexIlu0Preconditioner, Ilu0Preconditioner, IluError};
 #[cfg(all(target_os = "macos", feature = "accelerate"))]
 pub use linear::{CachedDenseLu, CachedDenseLuComplex};
 pub use linear::{CachedSparseLu, CachedSparseLuComplex};
+pub use measure::{MeasureError, MeasureEvaluator, MeasureResult};
 pub use newton::{
     ConvergenceCriteria, GminSteppingParams, GminSteppingResult, NonlinearStamper, NrResult,
     ScaledNonlinearStamper, SourceSteppingParams, SourceSteppingResult, solve_newton_raphson,
     solve_with_gmin_stepping, solve_with_source_stepping,
+};
+pub use noise::{
+    NoiseConfig, NoiseContribution, NoiseResult, NoiseSource, NoiseSourceType, NoiseStamper,
+    NoiseSweepType, compute_noise,
 };
 pub use operator::{ComplexOperator, RealOperator};
 pub use parallel::{
     ParallelTripletAccumulator, parallel_ranges, stamp_conductance_triplets,
     stamp_current_source_rhs,
 };
-pub use ilu::{ComplexIlu0Preconditioner, Ilu0Preconditioner, IluError};
 pub use preconditioner::{
     ComplexJacobiPreconditioner, ComplexPreconditioner, IdentityPreconditioner,
     JacobiPreconditioner, RealPreconditioner,
 };
-pub use solver_select::{SolveResult, SolverConfig, SolverStrategy, solve_auto};
-pub use sparse_operator::{SparseComplexOperator, SparseRealOperator};
-pub use sweep::{
-    BatchedSweepResult, CornerGenerator, LinearSweepGenerator, MonteCarloGenerator,
-    ParameterVariation, SweepPoint, SweepPointGenerator, SweepStamper, SweepStamperFactory,
-    SweepStatistics, solve_batched_sweep,
-};
-pub use measure::{MeasureError, MeasureEvaluator, MeasureResult};
 pub use sensitivity::{
     AcSensitivityResult, AcSensitivityStamper, DcSensitivityResult, DcSensitivityStamper,
     SensitivityConfig, SensitivityOutput, SensitivityParam, compute_ac_sensitivity,
     compute_ac_sensitivity_sweep, compute_dc_sensitivity,
 };
+pub use solver_select::{SolveResult, SolverConfig, SolverStrategy, solve_auto};
+pub use sparse_operator::{SparseComplexOperator, SparseRealOperator};
 pub use spectral::{
     HarmonicInfo, SpectralConfig, SpectralResult, ThdResult, WindowFunction, compute_fft,
     compute_fft_from_samples, compute_thd, compute_thd_from_samples, resample_uniform,
 };
-pub use noise::{
-    NoiseConfig, NoiseContribution, NoiseResult, NoiseSource, NoiseSourceType, NoiseStamper,
-    NoiseSweepType, compute_noise,
+pub use sweep::{
+    BatchedSweepResult, CornerGenerator, LinearSweepGenerator, MonteCarloGenerator,
+    ParameterVariation, SweepPoint, SweepPointGenerator, SweepStamper, SweepStamperFactory,
+    SweepStatistics, solve_batched_sweep,
 };
 pub use transient::{
     AdaptiveTransientParams, AdaptiveTransientResult, CapacitorState, InductorState,

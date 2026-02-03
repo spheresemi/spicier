@@ -89,6 +89,7 @@ impl Ilu0Preconditioner {
     /// Returns error if:
     /// - Zero pivot encountered during factorization
     /// - Diagonal entry missing from sparsity pattern
+    #[allow(clippy::needless_range_loop)]
     pub fn from_csr(
         size: usize,
         row_ptr: &[usize],
@@ -189,6 +190,7 @@ impl Ilu0Preconditioner {
     /// After this, lu_values contains:
     /// - L entries (below diagonal, with implicit unit diagonal)
     /// - U entries (on and above diagonal)
+    #[allow(clippy::needless_range_loop)]
     fn factorize_ilu0(
         size: usize,
         row_ptr: &[usize],
@@ -197,7 +199,8 @@ impl Ilu0Preconditioner {
         lu_values: &mut [f64],
     ) -> Result<(), IluError> {
         // Build a map from (row, col) to index for O(1) lookup
-        let mut col_to_idx: Vec<std::collections::HashMap<usize, usize>> = vec![Default::default(); size];
+        let mut col_to_idx: Vec<std::collections::HashMap<usize, usize>> =
+            vec![Default::default(); size];
         for i in 0..size {
             let row_start = row_ptr[i];
             let row_end = row_ptr[i + 1];
@@ -337,6 +340,7 @@ pub struct ComplexIlu0Preconditioner {
 
 impl ComplexIlu0Preconditioner {
     /// Create from CSR format with complex values.
+    #[allow(clippy::needless_range_loop)]
     pub fn from_csr(
         size: usize,
         row_ptr: &[usize],
@@ -415,6 +419,7 @@ impl ComplexIlu0Preconditioner {
     }
 
     /// Perform ILU(0) factorization in-place.
+    #[allow(clippy::needless_range_loop)]
     fn factorize_ilu0(
         size: usize,
         row_ptr: &[usize],
@@ -422,7 +427,8 @@ impl ComplexIlu0Preconditioner {
         diag_idx: &[usize],
         lu_values: &mut [C64],
     ) -> Result<(), IluError> {
-        let mut col_to_idx: Vec<std::collections::HashMap<usize, usize>> = vec![Default::default(); size];
+        let mut col_to_idx: Vec<std::collections::HashMap<usize, usize>> =
+            vec![Default::default(); size];
         for i in 0..size {
             let row_start = row_ptr[i];
             let row_end = row_ptr[i + 1];
@@ -559,7 +565,10 @@ impl std::error::Error for IluError {}
 // ============================================================================
 
 /// Convert triplets to CSR format.
-fn triplets_to_csr(size: usize, triplets: &[(usize, usize, f64)]) -> (Vec<usize>, Vec<usize>, Vec<f64>) {
+fn triplets_to_csr(
+    size: usize,
+    triplets: &[(usize, usize, f64)],
+) -> (Vec<usize>, Vec<usize>, Vec<f64>) {
     use std::collections::BTreeMap;
 
     // First, aggregate by (row, col) and sum duplicates
@@ -591,7 +600,10 @@ fn triplets_to_csr(size: usize, triplets: &[(usize, usize, f64)]) -> (Vec<usize>
 }
 
 /// Convert complex triplets to CSR format.
-fn triplets_to_csr_complex(size: usize, triplets: &[(usize, usize, C64)]) -> (Vec<usize>, Vec<usize>, Vec<C64>) {
+fn triplets_to_csr_complex(
+    size: usize,
+    triplets: &[(usize, usize, C64)],
+) -> (Vec<usize>, Vec<usize>, Vec<C64>) {
     use std::collections::BTreeMap;
 
     let mut entries: BTreeMap<(usize, usize), C64> = BTreeMap::new();
@@ -664,12 +676,27 @@ mod tests {
         // So y should be exact solution to A*y = x
         // Verify by computing A*y and comparing to x
         let ay0 = 2.0 * y[0] - 1.0 * y[1];
-        let ay1 = -1.0 * y[0] + 2.0 * y[1] - 1.0 * y[2];
-        let ay2 = -1.0 * y[1] + 2.0 * y[2];
+        let ay1 = -y[0] + 2.0 * y[1] - 1.0 * y[2];
+        let ay2 = -y[1] + 2.0 * y[2];
 
-        assert!((ay0 - x[0]).abs() < 1e-12, "A*y[0] = {}, expected {}", ay0, x[0]);
-        assert!((ay1 - x[1]).abs() < 1e-12, "A*y[1] = {}, expected {}", ay1, x[1]);
-        assert!((ay2 - x[2]).abs() < 1e-12, "A*y[2] = {}, expected {}", ay2, x[2]);
+        assert!(
+            (ay0 - x[0]).abs() < 1e-12,
+            "A*y[0] = {}, expected {}",
+            ay0,
+            x[0]
+        );
+        assert!(
+            (ay1 - x[1]).abs() < 1e-12,
+            "A*y[1] = {}, expected {}",
+            ay1,
+            x[1]
+        );
+        assert!(
+            (ay2 - x[2]).abs() < 1e-12,
+            "A*y[2] = {}, expected {}",
+            ay2,
+            x[2]
+        );
     }
 
     #[test]
@@ -693,8 +720,8 @@ mod tests {
 
         // Verify A*y = x
         let ay0 = 2.0 * y[0] - 1.0 * y[1];
-        let ay1 = -1.0 * y[0] + 2.0 * y[1] - 1.0 * y[2];
-        let ay2 = -1.0 * y[1] + 2.0 * y[2];
+        let ay1 = -y[0] + 2.0 * y[1] - 1.0 * y[2];
+        let ay2 = -y[1] + 2.0 * y[2];
 
         assert!((ay0 - x[0]).abs() < 1e-12);
         assert!((ay1 - x[1]).abs() < 1e-12);
@@ -793,10 +820,7 @@ mod tests {
 
     #[test]
     fn complex_ilu0_from_triplets() {
-        let triplets = vec![
-            (0, 0, C64::new(2.0, 1.0)),
-            (1, 1, C64::new(3.0, -1.0)),
-        ];
+        let triplets = vec![(0, 0, C64::new(2.0, 1.0)), (1, 1, C64::new(3.0, -1.0))];
 
         let precond = ComplexIlu0Preconditioner::from_triplets(2, &triplets).unwrap();
         assert_eq!(precond.dim(), 2);
@@ -804,12 +828,7 @@ mod tests {
 
     #[test]
     fn ilu0_sparsity_info() {
-        let triplets = vec![
-            (0, 0, 2.0),
-            (0, 1, 1.0),
-            (1, 0, 1.0),
-            (1, 1, 2.0),
-        ];
+        let triplets = vec![(0, 0, 2.0), (0, 1, 1.0), (1, 0, 1.0), (1, 1, 2.0)];
         let precond = Ilu0Preconditioner::from_triplets(2, &triplets).unwrap();
 
         let (row_ptr, col_idx) = precond.sparsity();
@@ -820,7 +839,7 @@ mod tests {
 
     #[test]
     fn ilu0_improves_gmres_convergence() {
-        use crate::gmres::{solve_gmres_real, solve_gmres_real_preconditioned, GmresConfig};
+        use crate::gmres::{GmresConfig, solve_gmres_real, solve_gmres_real_preconditioned};
         use crate::preconditioner::JacobiPreconditioner;
         use crate::sparse_operator::SparseRealOperator;
 
@@ -863,9 +882,18 @@ mod tests {
         let result_ilu = solve_gmres_real_preconditioned(&op, &ilu, &b, &config);
 
         // All should converge
-        assert!(result_none.converged, "Unpreconditioned GMRES did not converge");
-        assert!(result_jacobi.converged, "Jacobi-preconditioned GMRES did not converge");
-        assert!(result_ilu.converged, "ILU-preconditioned GMRES did not converge");
+        assert!(
+            result_none.converged,
+            "Unpreconditioned GMRES did not converge"
+        );
+        assert!(
+            result_jacobi.converged,
+            "Jacobi-preconditioned GMRES did not converge"
+        );
+        assert!(
+            result_ilu.converged,
+            "ILU-preconditioned GMRES did not converge"
+        );
 
         // ILU should be as good or better than Jacobi
         // (For tridiagonal, ILU(0) is exact, so it converges in 1 iteration)
@@ -901,10 +929,18 @@ mod tests {
         // ILU(0) cannot store fill at (2,0), (3,1), (0,3), (1,2) etc.
         // but it approximates well for diagonally dominant matrices
         let triplets = vec![
-            (0, 0, 4.0), (0, 1, 1.0), (0, 3, 1.0),
-            (1, 0, 1.0), (1, 1, 4.0), (1, 2, 1.0),
-            (2, 1, 1.0), (2, 2, 4.0), (2, 3, 1.0),
-            (3, 0, 1.0), (3, 2, 1.0), (3, 3, 4.0),
+            (0, 0, 4.0),
+            (0, 1, 1.0),
+            (0, 3, 1.0),
+            (1, 0, 1.0),
+            (1, 1, 4.0),
+            (1, 2, 1.0),
+            (2, 1, 1.0),
+            (2, 2, 4.0),
+            (2, 3, 1.0),
+            (3, 0, 1.0),
+            (3, 2, 1.0),
+            (3, 3, 4.0),
         ];
 
         let precond = Ilu0Preconditioner::from_triplets(4, &triplets).unwrap();

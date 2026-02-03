@@ -100,9 +100,10 @@ impl BufferPool {
         // Look for a suitable buffer in this bucket or larger
         for idx in bucket_idx..self.buckets.len() {
             // Find a buffer with matching or compatible usage
-            if let Some(pos) = self.buckets[idx].iter().position(|b| {
-                b.size >= size && b.usage.contains(usage)
-            }) {
+            if let Some(pos) = self.buckets[idx]
+                .iter()
+                .position(|b| b.size >= size && b.usage.contains(usage))
+            {
                 self.reused_allocations += 1;
                 return self.buckets[idx].remove(pos).buffer;
             }
@@ -295,10 +296,10 @@ mod tests {
 
     #[test]
     fn test_bucket_index() {
-        assert_eq!(BufferPool::bucket_index(100), 0);       // 100B -> 1KB bucket
-        assert_eq!(BufferPool::bucket_index(1024), 0);      // 1KB -> 1KB bucket
-        assert_eq!(BufferPool::bucket_index(2000), 1);      // 2KB -> 64KB bucket
-        assert_eq!(BufferPool::bucket_index(100_000), 2);   // 100KB -> 1MB bucket
+        assert_eq!(BufferPool::bucket_index(100), 0); // 100B -> 1KB bucket
+        assert_eq!(BufferPool::bucket_index(1024), 0); // 1KB -> 1KB bucket
+        assert_eq!(BufferPool::bucket_index(2000), 1); // 2KB -> 64KB bucket
+        assert_eq!(BufferPool::bucket_index(100_000), 2); // 100KB -> 1MB bucket
         assert_eq!(BufferPool::bucket_index(10_000_000), 3); // 10MB -> 16MB bucket
         assert_eq!(BufferPool::bucket_index(50_000_000), 4); // 50MB -> 64MB bucket
         assert_eq!(BufferPool::bucket_index(100_000_000), 5); // 100MB -> 256MB bucket

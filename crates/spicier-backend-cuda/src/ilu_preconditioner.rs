@@ -188,8 +188,8 @@ mod tests {
 
         // Verify A*y ≈ x
         let ay0 = 2.0 * y[0] - 1.0 * y[1];
-        let ay1 = -1.0 * y[0] + 2.0 * y[1] - 1.0 * y[2];
-        let ay2 = -1.0 * y[1] + 2.0 * y[2];
+        let ay1 = -y[0] + 2.0 * y[1] - 1.0 * y[2];
+        let ay2 = -y[1] + 2.0 * y[2];
 
         assert!((ay0 - x[0]).abs() < 1e-10);
         assert!((ay1 - x[1]).abs() < 1e-10);

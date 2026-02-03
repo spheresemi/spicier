@@ -109,8 +109,8 @@ impl Default for DispatchConfig {
         Self {
             backend: ComputeBackend::Cpu,
             strategy: SolverDispatchStrategy::Auto,
-            cpu_threshold: 1000,           // < 1k nodes: always CPU
-            gmres_threshold: 10_000,       // >= 10k nodes: prefer GMRES
+            cpu_threshold: 1000,             // < 1k nodes: always CPU
+            gmres_threshold: 10_000,         // >= 10k nodes: prefer GMRES
             sparse_direct_threshold: 50_000, // >= 50k: GPU sparse direct (CUDA)
             gmres_config: GmresConfig::default(),
             gpu_batch_config: GpuBatchConfig::default(),
@@ -240,8 +240,7 @@ impl DispatchConfig {
     /// - Backend is CUDA
     /// - Size is above sparse_direct_threshold
     pub fn use_gpu_sparse_direct(&self, size: usize) -> bool {
-        matches!(self.backend, ComputeBackend::Cuda { .. })
-            && size >= self.sparse_direct_threshold
+        matches!(self.backend, ComputeBackend::Cuda { .. }) && size >= self.sparse_direct_threshold
     }
 
     /// Select the appropriate preconditioner type for a given size.

@@ -15,6 +15,7 @@ use crate::output::get_ac_print_nodes;
 use crate::stampers::{NetlistAcStamper, NetlistNonlinearStamper};
 
 /// Run AC small-signal analysis.
+#[allow(clippy::too_many_arguments)]
 pub fn run_ac_analysis(
     netlist: &spicier_core::Netlist,
     sweep_type: AcSweepType,

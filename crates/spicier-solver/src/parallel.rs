@@ -157,7 +157,7 @@ pub fn parallel_ranges(total: usize, num_threads: usize) -> Vec<(usize, usize)> 
     if num_threads == 0 || total == 0 {
         return vec![];
     }
-    let chunk_size = (total + num_threads - 1) / num_threads;
+    let chunk_size = total.div_ceil(num_threads);
     (0..num_threads)
         .map(|i| {
             let start = i * chunk_size;

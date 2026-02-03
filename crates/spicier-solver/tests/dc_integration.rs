@@ -3,6 +3,7 @@
 use spicier_core::{Netlist, NodeId};
 use spicier_devices::passive::Resistor;
 use spicier_devices::sources::{CurrentSource, VoltageSource};
+use spicier_devices::tline::TransmissionLine;
 use spicier_solver::solve_dc;
 
 /// Test a simple voltage divider circuit:
@@ -224,4 +225,141 @@ fn test_current_variable_counting() {
     assert_eq!(mna.num_nodes, 2);
     assert_eq!(mna.num_vsources, 1);
     assert_eq!(mna.size(), 3);
+}
+
+/// Test transmission line DC behavior:
+///
+/// At DC, a lossless transmission line acts as a short circuit because
+/// inductors are shorts and capacitors are open.
+///
+/// ```text
+///        V1 = 10V
+///          +
+///          |
+///        node1
+///          |
+///       T1 (Z0=50, TD=1ns, 3 sections)
+///          |
+///        node2
+///          |
+///         R1 = 100 ohms
+///          |
+///         GND
+/// ```
+///
+/// Expected: V(node1) = V(node2) = 10V (transmission line is short at DC)
+/// Current through V1 = -0.1A (100mA through R1)
+#[test]
+fn test_transmission_line_dc_short() {
+    let mut netlist = Netlist::with_title("Transmission Line DC Test");
+
+    let n1 = NodeId::new(1);
+    let n2 = NodeId::new(2);
+    let gnd = NodeId::GROUND;
+
+    netlist.register_node(n1);
+    netlist.register_node(n2);
+
+    // V1: 10V source from node1 to ground
+    let v1 = VoltageSource::new("V1", n1, gnd, 10.0, netlist.next_current_index());
+    netlist.add_device(v1);
+
+    // T1: Transmission line with 3 LC sections
+    // Each section needs a current variable for its inductor
+    let current_base = netlist.next_current_index();
+    let mut t1 = TransmissionLine::with_sections(
+        "T1",
+        n1,
+        gnd, // port1 negative
+        n2,
+        gnd,  // port2 negative
+        50.0, // Z0 = 50 ohms
+        1e-9, // TD = 1ns
+        3,    // 3 LC sections
+        current_base,
+    );
+
+    // Create internal nodes for the LC ladder (3 sections = 2 internal nodes)
+    let n_int1 = NodeId::new(3);
+    let n_int2 = NodeId::new(4);
+    netlist.register_node(n_int1);
+    netlist.register_node(n_int2);
+    t1.set_internal_nodes(vec![n_int1, n_int2]);
+
+    netlist.add_device(t1);
+
+    // R1: 100 ohm load resistor from node2 to ground
+    let r1 = Resistor::new("R1", n2, gnd, 100.0);
+    netlist.add_device(r1);
+
+    // Assemble and solve
+    let mna = netlist.assemble_mna();
+    let solution = solve_dc(&mna).expect("DC solution should succeed");
+
+    // Check that transmission line is transparent at DC
+    // Node1 should be at 10V
+    assert!(
+        (solution.voltage(n1) - 10.0).abs() < 1e-9,
+        "V(node1) = {} (expected 10.0)",
+        solution.voltage(n1)
+    );
+
+    // Node2 should also be at 10V (transmission line is short at DC)
+    assert!(
+        (solution.voltage(n2) - 10.0).abs() < 1e-9,
+        "V(node2) = {} (expected 10.0)",
+        solution.voltage(n2)
+    );
+
+    // Internal nodes should also be at 10V
+    assert!(
+        (solution.voltage(n_int1) - 10.0).abs() < 1e-9,
+        "V(internal1) = {} (expected 10.0)",
+        solution.voltage(n_int1)
+    );
+    assert!(
+        (solution.voltage(n_int2) - 10.0).abs() < 1e-9,
+        "V(internal2) = {} (expected 10.0)",
+        solution.voltage(n_int2)
+    );
+
+    // Current through V1 should be -0.1A (negative = into source)
+    // I = V / R = 10V / 100 ohms = 0.1A
+    let i_v1 = solution.current(0);
+    assert!(
+        (i_v1 + 0.1).abs() < 1e-9,
+        "I(V1) = {} (expected -0.1)",
+        i_v1
+    );
+
+    println!("Transmission line DC solution:");
+    println!("  V(node1) = {:.4}V", solution.voltage(n1));
+    println!("  V(node2) = {:.4}V", solution.voltage(n2));
+    println!("  I(V1) = {:.4}A", i_v1);
+}
+
+/// Test transmission line current variable counting.
+#[test]
+fn test_transmission_line_current_vars() {
+    let mut netlist = Netlist::new();
+
+    let n1 = NodeId::new(1);
+    let n2 = NodeId::new(2);
+    let gnd = NodeId::GROUND;
+
+    netlist.register_node(n1);
+    netlist.register_node(n2);
+
+    // V1: 5V source (needs 1 current variable)
+    let v1 = VoltageSource::new("V1", n1, gnd, 5.0, 0);
+    netlist.add_device(v1);
+
+    assert_eq!(netlist.num_current_vars(), 1);
+
+    // T1 with 5 sections (needs 5 current variables for inductors)
+    let t1 = TransmissionLine::with_sections("T1", n1, gnd, n2, gnd, 50.0, 1e-9, 5, 1);
+    netlist.add_device(t1);
+
+    // Should now have 1 (V1) + 5 (T1) = 6 current variables
+    assert_eq!(netlist.num_current_vars(), 6);
 }

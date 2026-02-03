@@ -157,12 +157,7 @@ fn run_simulation(input: &PathBuf, cli: &Cli) -> Result<()> {
                 let has_param_sweep = sweeps.iter().any(|s| s.sweep_type == DcSweepType::Param);
 
                 if has_param_sweep {
-                    run_dc_param_sweep(
-                        &content,
-                        sweeps,
-                        &print_vars,
-                        &dc_measurements,
-                    )?;
+                    run_dc_param_sweep(&content, sweeps, &print_vars, &dc_measurements)?;
                 } else {
                     run_dc_sweep(&netlist, sweeps, &print_vars, &node_map, &dc_measurements)?;
                 }

@@ -1,7 +1,7 @@
 //! Noise analysis computation.
 
-use std::f64::consts::PI;
 use num_complex::Complex;
+use std::f64::consts::PI;
 
 use crate::ac::ComplexMna;
 use crate::error::Result;
@@ -29,6 +29,9 @@ pub struct NoiseConfig {
     pub output_ref_node: Option<usize>,
     /// Input source index (for computing input-referred noise). None if not needed.
     pub input_source_idx: Option<usize>,
+    /// Source resistance in Ohms (for noise figure calculation).
+    /// If None, noise figure is not computed.
+    pub source_resistance: Option<f64>,
     /// Start frequency in Hz.
     pub fstart: f64,
     /// Stop frequency in Hz.
@@ -47,6 +50,7 @@ impl Default for NoiseConfig {
             output_node: 0,
             output_ref_node: None,
             input_source_idx: None,
+            source_resistance: None,
             fstart: 1.0,
             fstop: 1e6,
             num_points: 10,
@@ -84,6 +88,10 @@ pub struct NoiseResult {
     /// Equivalent input noise resistance (Ohms) at each frequency.
     /// Rn = Sv_input / (4kT)
     pub equiv_input_noise_resistance: Vec<f64>,
+    /// Noise figure in dB at each frequency.
+    /// NF = 10 * log10(F) where F = Sv_input / Sv_source.
+    /// Only computed if source_resistance was specified.
+    pub noise_figure_db: Vec<f64>,
     /// Temperature used for analysis (Kelvin).
     pub temperature: f64,
 }
@@ -143,19 +151,169 @@ impl NoiseResult {
 
     /// Get the dominant noise contributor at a specific frequency.
     pub fn dominant_contributor_at(&self, frequency: f64) -> Option<&str> {
-        let freq_idx = self.frequencies
-            .iter()
-            .position(|&f| f >= frequency)?;
+        let freq_idx = self.frequencies.iter().position(|&f| f >= frequency)?;
 
         self.contributions
             .iter()
             .max_by(|a, b| {
-                a.contribution_percent.get(freq_idx)
+                a.contribution_percent
+                    .get(freq_idx)
                     .unwrap_or(&0.0)
                     .partial_cmp(b.contribution_percent.get(freq_idx).unwrap_or(&0.0))
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
             .map(|c| c.source_name.as_str())
+    }
+
+    /// Get noise figure in dB at a specific frequency (interpolated).
+    ///
+    /// Returns None if noise figure was not computed (no source resistance specified).
+    pub fn noise_figure_at(&self, frequency: f64) -> Option<f64> {
+        if self.noise_figure_db.is_empty() {
+            return None;
+        }
+        interpolate_log(&self.frequencies, &self.noise_figure_db, frequency)
+    }
+
+    /// Get the minimum noise figure and the frequency at which it occurs.
+    ///
+    /// Returns (frequency, NF_dB) or None if noise figure was not computed.
+    pub fn min_noise_figure(&self) -> Option<(f64, f64)> {
+        if self.noise_figure_db.is_empty() {
+            return None;
+        }
+        self.noise_figure_db
+            .iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(idx, &nf)| (self.frequencies[idx], nf))
+    }
+
+    /// Get noise figure statistics: (min, max, average) in dB.
+    ///
+    /// Returns None if noise figure was not computed.
+    pub fn noise_figure_stats(&self) -> Option<(f64, f64, f64)> {
+        if self.noise_figure_db.is_empty() {
+            return None;
+        }
+        let min = self
+            .noise_figure_db
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min);
+        let max = self
+            .noise_figure_db
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
+        let avg = self.noise_figure_db.iter().sum::<f64>() / self.noise_figure_db.len() as f64;
+        Some((min, max, avg))
+    }
+
+    /// Export noise spectral density to CSV format.
+    ///
+    /// The CSV includes frequency, output noise, input noise (if available),
+    /// equivalent input noise resistance, noise figure (if available), and
+    /// per-source contributions.
+    ///
+    /// # Returns
+    /// CSV string with header row and data
+    pub fn to_csv(&self) -> String {
+        let mut csv = String::new();
+
+        // Build header
+        let mut headers = vec![
+            "Frequency(Hz)",
+            "OutputNoise(V/rtHz)",
+            "OutputNoiseSq(V^2/Hz)",
+        ];
+        if !self.input_noise.is_empty() {
+            headers.push("InputNoise(V/rtHz)");
+        }
+        headers.push("EquivNoiseR(Ohms)");
+        if !self.noise_figure_db.is_empty() {
+            headers.push("NoiseFigure(dB)");
+        }
+        for contrib in &self.contributions {
+            headers.push(&contrib.source_name);
+        }
+        csv.push_str(&headers.join(","));
+        csv.push('\n');
+
+        // Write data rows
+        for i in 0..self.frequencies.len() {
+            let mut row = vec![
+                format!("{:.6e}", self.frequencies[i]),
+                format!("{:.6e}", self.output_noise[i]),
+                format!("{:.6e}", self.output_noise_sq[i]),
+            ];
+            if !self.input_noise.is_empty() {
+                row.push(format!("{:.6e}", self.input_noise[i]));
+            }
+            row.push(format!("{:.6e}", self.equiv_input_noise_resistance[i]));
+            if !self.noise_figure_db.is_empty() {
+                row.push(format!("{:.4}", self.noise_figure_db[i]));
+            }
+            for contrib in &self.contributions {
+                // Output contribution percentage
+                row.push(format!("{:.2}", contrib.contribution_percent[i]));
+            }
+            csv.push_str(&row.join(","));
+            csv.push('\n');
+        }
+
+        csv
+    }
+
+    /// Export noise spectral density to a file.
+    ///
+    /// # Arguments
+    /// * `path` - File path to write to
+    ///
+    /// # Returns
+    /// Result indicating success or IO error
+    pub fn write_csv(&self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+        std::fs::write(path, self.to_csv())
+    }
+
+    /// Export detailed noise contributions to CSV format.
+    ///
+    /// This format provides the noise power (V²/Hz) from each source at each frequency,
+    /// suitable for detailed noise budget analysis.
+    pub fn contributions_to_csv(&self) -> String {
+        let mut csv = String::new();
+
+        // Header: Frequency, Source1_Sq, Source1_%, Source2_Sq, Source2_%, ...
+        let mut headers = vec!["Frequency(Hz)".to_string()];
+        for contrib in &self.contributions {
+            headers.push(format!("{}_V2Hz", contrib.source_name));
+            headers.push(format!("{}_%", contrib.source_name));
+        }
+        headers.push("Total_V2Hz".to_string());
+        csv.push_str(&headers.join(","));
+        csv.push('\n');
+
+        // Data rows
+        for i in 0..self.frequencies.len() {
+            let mut row = vec![format!("{:.6e}", self.frequencies[i])];
+            for contrib in &self.contributions {
+                row.push(format!("{:.6e}", contrib.output_noise_sq[i]));
+                row.push(format!("{:.2}", contrib.contribution_percent[i]));
+            }
+            row.push(format!("{:.6e}", self.output_noise_sq[i]));
+            csv.push_str(&row.join(","));
+            csv.push('\n');
+        }
+
+        csv
+    }
+
+    /// Export noise contributions to a file.
+    pub fn write_contributions_csv(
+        &self,
+        path: impl AsRef<std::path::Path>,
+    ) -> std::io::Result<()> {
+        std::fs::write(path, self.contributions_to_csv())
     }
 }
 
@@ -213,7 +371,8 @@ fn generate_frequencies(config: &NoiseConfig) -> Vec<f64> {
         NoiseSweepType::Decade => {
             let decades = (config.fstop / config.fstart).log10();
             let total_points = (decades * config.num_points as f64).ceil() as usize + 1;
-            let log_step = (config.fstop.log10() - config.fstart.log10()) / (total_points - 1) as f64;
+            let log_step =
+                (config.fstop.log10() - config.fstart.log10()) / (total_points - 1) as f64;
             for i in 0..total_points {
                 let log_f = config.fstart.log10() + i as f64 * log_step;
                 frequencies.push(10.0_f64.powf(log_f));
@@ -255,10 +414,7 @@ fn solve_complex_mna(mna: &ComplexMna) -> Result<Vec<Complex<f64>>> {
 ///
 /// # Returns
 /// Noise analysis results with output noise, input-referred noise, and contributions
-pub fn compute_noise(
-    stamper: &dyn NoiseStamper,
-    config: &NoiseConfig,
-) -> Result<NoiseResult> {
+pub fn compute_noise(stamper: &dyn NoiseStamper, config: &NoiseConfig) -> Result<NoiseResult> {
     let frequencies = generate_frequencies(config);
     let noise_sources = stamper.noise_sources();
     let num_nodes = stamper.num_nodes();
@@ -312,15 +468,18 @@ pub fn compute_noise(
 
             // Extract output voltage (transfer impedance)
             let v_out = if let Some(ref_node) = config.output_ref_node {
-                let v_pos = solution.get(config.output_node)
+                let v_pos = solution
+                    .get(config.output_node)
                     .copied()
                     .unwrap_or(Complex::new(0.0, 0.0));
-                let v_neg = solution.get(ref_node)
+                let v_neg = solution
+                    .get(ref_node)
                     .copied()
                     .unwrap_or(Complex::new(0.0, 0.0));
                 v_pos - v_neg
             } else {
-                solution.get(config.output_node)
+                solution
+                    .get(config.output_node)
                     .copied()
                     .unwrap_or(Complex::new(0.0, 0.0))
             };
@@ -355,12 +514,9 @@ pub fn compute_noise(
             let omega = 2.0 * PI * freq;
 
             // Get gain from input to output
-            if let Ok(gain) = stamper.input_gain(
-                omega,
-                input_idx,
-                config.output_node,
-                config.output_ref_node,
-            ) {
+            if let Ok(gain) =
+                stamper.input_gain(omega, input_idx, config.output_node, config.output_ref_node)
+            {
                 let gain_mag = gain.norm();
                 if gain_mag > 1e-20 {
                     // Input-referred noise = output noise / |gain|
@@ -380,19 +536,39 @@ pub fn compute_noise(
     // Compute equivalent input noise resistance
     let boltzmann_4kt = 4.0 * super::sources::BOLTZMANN * config.temperature;
     let equiv_input_noise_resistance: Vec<f64> = if !input_noise.is_empty() {
-        input_noise.iter()
+        input_noise
+            .iter()
             .map(|&vn| {
                 let sv = vn * vn;
                 sv / boltzmann_4kt
             })
             .collect()
     } else {
-        output_noise.iter()
+        output_noise
+            .iter()
             .map(|&vn| {
                 let sv = vn * vn;
                 sv / boltzmann_4kt
             })
             .collect()
+    };
+
+    // Compute noise figure if source resistance is specified
+    // NF = 10 * log10(F) where F = Sv_input / Sv_source = Rn / Rs
+    let noise_figure_db = if let Some(rs) = config.source_resistance {
+        if rs > 0.0 && !equiv_input_noise_resistance.is_empty() {
+            equiv_input_noise_resistance
+                .iter()
+                .map(|&rn| {
+                    let f = rn / rs;
+                    if f > 0.0 { 10.0 * f.log10() } else { 0.0 }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
     };
 
     Ok(NoiseResult {
@@ -402,6 +578,7 @@ pub fn compute_noise(
         input_noise,
         contributions,
         equiv_input_noise_resistance,
+        noise_figure_db,
         temperature: config.temperature,
     })
 }
@@ -476,9 +653,9 @@ mod tests {
 
         // Check uniform spacing
         let step = (1000.0 - 100.0) / 9.0;
-        for i in 0..10 {
+        for (i, freq) in freqs.iter().enumerate() {
             let expected = 100.0 + i as f64 * step;
-            assert!((freqs[i] - expected).abs() < 1e-10);
+            assert!((freq - expected).abs() < 1e-10);
         }
     }
 
@@ -494,5 +671,140 @@ mod tests {
         // Interpolated point (geometric mean of 10 and 100 is ~31.6)
         let mid = interpolate_log(&frequencies, &values, 31.6227766).unwrap();
         assert!((mid - 2.5).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_noise_figure_calculation() {
+        // Create a mock NoiseResult to test noise figure methods
+        let result = NoiseResult {
+            frequencies: vec![100.0, 1000.0, 10000.0],
+            output_noise: vec![1e-8, 1e-8, 1e-8],
+            output_noise_sq: vec![1e-16, 1e-16, 1e-16],
+            input_noise: vec![1e-9, 1e-9, 1e-9],
+            contributions: vec![],
+            // Rn = Sv / 4kT = 1e-18 / (4 * 1.38e-23 * 300) = 60.4 ohms
+            equiv_input_noise_resistance: vec![60.4, 60.4, 60.4],
+            // NF = 10 * log10(Rn / Rs) with Rs = 50 ohms
+            // NF = 10 * log10(60.4 / 50) = 10 * log10(1.208) = 0.82 dB
+            noise_figure_db: vec![0.82, 0.82, 0.82],
+            temperature: 300.0,
+        };
+
+        // Test noise_figure_at
+        let nf = result.noise_figure_at(1000.0).unwrap();
+        assert!(
+            (nf - 0.82).abs() < 0.01,
+            "NF at 1kHz = {} (expected 0.82)",
+            nf
+        );
+
+        // Test min_noise_figure
+        let (freq, min_nf) = result.min_noise_figure().unwrap();
+        assert!((min_nf - 0.82).abs() < 0.01);
+        assert!((100.0..=10000.0).contains(&freq));
+
+        // Test noise_figure_stats
+        let (min, max, avg) = result.noise_figure_stats().unwrap();
+        assert!((min - 0.82).abs() < 0.01);
+        assert!((max - 0.82).abs() < 0.01);
+        assert!((avg - 0.82).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_noise_figure_empty_when_no_source_resistance() {
+        let result = NoiseResult {
+            frequencies: vec![100.0, 1000.0],
+            output_noise: vec![1e-8, 1e-8],
+            output_noise_sq: vec![1e-16, 1e-16],
+            input_noise: vec![],
+            contributions: vec![],
+            equiv_input_noise_resistance: vec![50.0, 50.0],
+            noise_figure_db: vec![], // Empty when source_resistance not specified
+            temperature: 300.0,
+        };
+
+        assert!(result.noise_figure_at(1000.0).is_none());
+        assert!(result.min_noise_figure().is_none());
+        assert!(result.noise_figure_stats().is_none());
+    }
+
+    #[test]
+    fn test_noise_csv_export() {
+        let result = NoiseResult {
+            frequencies: vec![100.0, 1000.0, 10000.0],
+            output_noise: vec![1e-8, 2e-8, 3e-8],
+            output_noise_sq: vec![1e-16, 4e-16, 9e-16],
+            input_noise: vec![1e-9, 2e-9, 3e-9],
+            contributions: vec![
+                NoiseContribution {
+                    source_name: "R1".to_string(),
+                    output_noise_sq: vec![5e-17, 2e-16, 4.5e-16],
+                    contribution_percent: vec![50.0, 50.0, 50.0],
+                },
+                NoiseContribution {
+                    source_name: "R2".to_string(),
+                    output_noise_sq: vec![5e-17, 2e-16, 4.5e-16],
+                    contribution_percent: vec![50.0, 50.0, 50.0],
+                },
+            ],
+            equiv_input_noise_resistance: vec![60.0, 60.0, 60.0],
+            noise_figure_db: vec![0.8, 0.8, 0.8],
+            temperature: 300.0,
+        };
+
+        let csv = result.to_csv();
+
+        // Check header
+        assert!(csv.contains("Frequency(Hz)"));
+        assert!(csv.contains("OutputNoise(V/rtHz)"));
+        assert!(csv.contains("InputNoise(V/rtHz)"));
+        assert!(csv.contains("NoiseFigure(dB)"));
+        assert!(csv.contains("R1"));
+        assert!(csv.contains("R2"));
+
+        // Check data rows exist
+        let lines: Vec<&str> = csv.lines().collect();
+        assert_eq!(lines.len(), 4); // header + 3 data rows
+
+        // Check first data row contains frequency
+        assert!(lines[1].contains("1.000000e2"));
+    }
+
+    #[test]
+    fn test_noise_contributions_csv_export() {
+        let result = NoiseResult {
+            frequencies: vec![100.0, 1000.0],
+            output_noise: vec![1e-8, 1e-8],
+            output_noise_sq: vec![1e-16, 1e-16],
+            input_noise: vec![],
+            contributions: vec![
+                NoiseContribution {
+                    source_name: "R1".to_string(),
+                    output_noise_sq: vec![6e-17, 6e-17],
+                    contribution_percent: vec![60.0, 60.0],
+                },
+                NoiseContribution {
+                    source_name: "D1_shot".to_string(),
+                    output_noise_sq: vec![4e-17, 4e-17],
+                    contribution_percent: vec![40.0, 40.0],
+                },
+            ],
+            equiv_input_noise_resistance: vec![50.0, 50.0],
+            noise_figure_db: vec![],
+            temperature: 300.0,
+        };
+
+        let csv = result.contributions_to_csv();
+
+        // Check header
+        assert!(csv.contains("Frequency(Hz)"));
+        assert!(csv.contains("R1_V2Hz"));
+        assert!(csv.contains("R1_%"));
+        assert!(csv.contains("D1_shot_V2Hz"));
+        assert!(csv.contains("Total_V2Hz"));
+
+        // Check data
+        let lines: Vec<&str> = csv.lines().collect();
+        assert_eq!(lines.len(), 3); // header + 2 data rows
     }
 }

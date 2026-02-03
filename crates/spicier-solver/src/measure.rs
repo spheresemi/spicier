@@ -121,7 +121,10 @@ impl MeasureEvaluator {
                 // Interpolate find_values at when_time
                 Self::interpolate_at_time(&times, &find_values, when_time)
             }
-            MeasureType::FindAt { find_expr, at_value } => {
+            MeasureType::FindAt {
+                find_expr,
+                at_value,
+            } => {
                 let find_values = Self::extract_waveform(result, find_expr, node_map)?;
                 let times: Vec<f64> = result.points.iter().map(|p| p.time).collect();
 
@@ -250,7 +253,10 @@ impl MeasureEvaluator {
         }
 
         match &meas.measure_type {
-            MeasureType::FindAt { find_expr, at_value } => {
+            MeasureType::FindAt {
+                find_expr,
+                at_value,
+            } => {
                 // Extract waveform across sweep
                 let values = Self::extract_dc_sweep_waveform(result, find_expr, node_map)?;
                 let sweep_values = &result.sweep_values;
@@ -268,7 +274,8 @@ impl MeasureEvaluator {
                 let when_values = Self::extract_dc_sweep_waveform(result, when_expr, node_map)?;
                 let sweep_values = &result.sweep_values;
 
-                let when_sweep = Self::find_crossing(sweep_values, &when_values, *when_val, when_type)?;
+                let when_sweep =
+                    Self::find_crossing(sweep_values, &when_values, *when_val, when_type)?;
                 Self::interpolate_at_time(sweep_values, &find_values, when_sweep)
             }
             MeasureType::TrigTarg {
@@ -283,8 +290,10 @@ impl MeasureEvaluator {
                 let targ_values = Self::extract_dc_sweep_waveform(result, targ_expr, node_map)?;
                 let sweep_values = &result.sweep_values;
 
-                let trig_point = Self::find_crossing(sweep_values, &trig_values, *trig_val, trig_type)?;
-                let targ_point = Self::find_crossing(sweep_values, &targ_values, *targ_val, targ_type)?;
+                let trig_point =
+                    Self::find_crossing(sweep_values, &trig_values, *trig_val, trig_type)?;
+                let targ_point =
+                    Self::find_crossing(sweep_values, &targ_values, *targ_val, targ_type)?;
 
                 Ok(targ_point - trig_point)
             }
@@ -356,7 +365,10 @@ impl MeasureEvaluator {
         }
 
         match &meas.measure_type {
-            MeasureType::FindAt { find_expr, at_value } => {
+            MeasureType::FindAt {
+                find_expr,
+                at_value,
+            } => {
                 // Extract magnitude waveform across frequency
                 let values = Self::extract_ac_waveform(result, find_expr, node_map)?;
                 let freqs: Vec<f64> = result.points.iter().map(|p| p.frequency).collect();
@@ -508,7 +520,8 @@ impl MeasureEvaluator {
         let expr_upper = expr.to_uppercase();
 
         // Parse the expression type
-        let (node_name, value_type) = if expr_upper.starts_with("VDB(") && expr_upper.ends_with(')') {
+        let (node_name, value_type) = if expr_upper.starts_with("VDB(") && expr_upper.ends_with(')')
+        {
             (&expr[4..expr.len() - 1], "db")
         } else if expr_upper.starts_with("VP(") && expr_upper.ends_with(')') {
             (&expr[3..expr.len() - 1], "phase")
@@ -654,11 +667,7 @@ impl MeasureEvaluator {
     }
 
     /// Interpolate value at a specific time.
-    fn interpolate_at_time(
-        times: &[f64],
-        values: &[f64],
-        time: f64,
-    ) -> Result<f64, MeasureError> {
+    fn interpolate_at_time(times: &[f64], values: &[f64], time: f64) -> Result<f64, MeasureError> {
         if times.is_empty() {
             return Err(MeasureError::NoData);
         }
@@ -686,11 +695,7 @@ impl MeasureEvaluator {
     }
 
     /// Evaluate a statistical function over values.
-    fn eval_statistic(
-        func: &StatFunc,
-        times: &[f64],
-        values: &[f64],
-    ) -> Result<f64, MeasureError> {
+    fn eval_statistic(func: &StatFunc, times: &[f64], values: &[f64]) -> Result<f64, MeasureError> {
         if values.is_empty() {
             return Err(MeasureError::NoData);
         }

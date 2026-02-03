@@ -286,7 +286,11 @@ fn process_chunk(
 
     // Log progress for large chunks
     if chunk_size >= 100 {
-        log::debug!("Processed chunk at index {} ({} points)", base_idx, chunk_size);
+        log::debug!(
+            "Processed chunk at index {} ({} points)",
+            base_idx,
+            chunk_size
+        );
     }
 
     results
@@ -419,7 +423,11 @@ mod tests {
 
         // Verify solutions are reasonable
         let stats = result.statistics(1);
-        assert!(stats.mean > 3.0 && stats.mean < 7.0, "Mean was {}", stats.mean);
+        assert!(
+            stats.mean > 3.0 && stats.mean < 7.0,
+            "Mean was {}",
+            stats.mean
+        );
     }
 
     #[test]

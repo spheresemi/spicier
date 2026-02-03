@@ -237,8 +237,10 @@ fn test_tran_rl_step() {
 
     let _netlist = "RL Step\nV1 1 0 DC 5\nR1 1 2 1k\nL1 2 0 1\n.tran 100u 5m\n.end\n";
 
-    let mut _config = ComparisonConfig::default();
-    _config.variables = Some(vec!["v(1)".to_string(), "v(2)".to_string()]);
+    let _config = ComparisonConfig {
+        variables: Some(vec!["v(1)".to_string(), "v(2)".to_string()]),
+        ..Default::default()
+    };
 
     // This test currently panics due to matrix dimension mismatch
     // Uncomment when the inductor issue is fixed:
@@ -255,6 +257,7 @@ fn test_tran_rl_step() {
 
 #[test]
 #[ignore = "requires ngspice"]
+#[allow(clippy::field_reassign_with_default)]
 fn test_dc_diode_iv() {
     // Diode forward bias with current limiting resistor
     // With V1=0.7V, R1=100Ω, IS=1e-14, N=1:
@@ -266,8 +269,10 @@ fn test_dc_diode_iv() {
     let netlist =
         "Diode IV\nV1 1 0 DC 0.7\nR1 1 2 100\nD1 2 0 DMOD\n.model DMOD D IS=1e-14 N=1\n.op\n.end\n";
 
-    let mut config = ComparisonConfig::default();
-    config.variables = Some(vec!["v(1)".to_string(), "v(2)".to_string()]);
+    let mut config = ComparisonConfig {
+        variables: Some(vec!["v(1)".to_string(), "v(2)".to_string()]),
+        ..Default::default()
+    };
     config.dc.voltage_rel = 1e-4; // Very tight tolerance (actual error ~0.00%)
 
     let report = compare_simulators(netlist, &config).unwrap();
@@ -281,6 +286,7 @@ fn test_dc_diode_iv() {
 
 #[test]
 #[ignore = "requires ngspice"]
+#[allow(clippy::field_reassign_with_default)]
 fn test_dc_nmos_common_source() {
     // NMOS common-source amplifier with resistive load
     // With Vdd=5V, Vg=2V, Vto=0.7V, KP=100µ, W/L=10:

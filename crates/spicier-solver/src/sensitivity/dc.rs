@@ -69,9 +69,10 @@ fn extract_output(solution: &[f64], output: &SensitivityOutput, num_nodes: usize
         SensitivityOutput::Voltage { node_idx, .. } => {
             solution.get(*node_idx).copied().unwrap_or(0.0)
         }
-        SensitivityOutput::Current { branch_idx, .. } => {
-            solution.get(num_nodes + *branch_idx).copied().unwrap_or(0.0)
-        }
+        SensitivityOutput::Current { branch_idx, .. } => solution
+            .get(num_nodes + *branch_idx)
+            .copied()
+            .unwrap_or(0.0),
         SensitivityOutput::VoltageDiff {
             node_pos, node_neg, ..
         } => {

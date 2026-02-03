@@ -313,15 +313,20 @@ impl<'a> Parser<'a> {
 
         // Build ParamContext with proper precedence
         let ctx = ParamContext::with_all(
-            self.parameters.clone(),     // global params
-            subckt.params.clone(),       // subcircuit defaults
-            instance_params.clone(),     // instance overrides
+            self.parameters.clone(), // global params
+            subckt.params.clone(),   // subcircuit defaults
+            instance_params.clone(), // instance overrides
         );
 
         // Expand element lines with node substitution and parameter evaluation
         for elem in &subckt.elements {
-            let expanded =
-                self.expand_element_line_with_params(instance_name, &elem.line, &node_map, &ctx, line)?;
+            let expanded = self.expand_element_line_with_params(
+                instance_name,
+                &elem.line,
+                &node_map,
+                &ctx,
+                line,
+            )?;
             self.parse_expanded_element_with_context(&expanded, &ctx, line)?;
         }
 
@@ -485,7 +490,8 @@ impl<'a> Parser<'a> {
                     // Evaluate value expression in parent context
                     if pval.starts_with('{') && pval.ends_with('}') {
                         let expr = &pval[1..pval.len() - 1];
-                        let value = self.eval_curly_expr_with_context(expr, parent_ctx, source_line)?;
+                        let value =
+                            self.eval_curly_expr_with_context(expr, parent_ctx, source_line)?;
                         nested_instance_params.insert(pname, value);
                     } else if let Some(val) = parse_value(pval) {
                         nested_instance_params.insert(pname, val);
@@ -499,7 +505,8 @@ impl<'a> Parser<'a> {
                         let pval = parts[i + 2];
                         if pval.starts_with('{') && pval.ends_with('}') {
                             let expr = &pval[1..pval.len() - 1];
-                            let value = self.eval_curly_expr_with_context(expr, parent_ctx, source_line)?;
+                            let value =
+                                self.eval_curly_expr_with_context(expr, parent_ctx, source_line)?;
                             nested_instance_params.insert(pname, value);
                         } else if let Some(val) = parse_value(pval) {
                             nested_instance_params.insert(pname, val);
@@ -530,10 +537,8 @@ impl<'a> Parser<'a> {
         };
 
         // Create child context: parent's merged becomes child's global
-        let child_ctx = parent_ctx.child_context(
-            nested_subckt.params.clone(),
-            nested_instance_params,
-        );
+        let child_ctx =
+            parent_ctx.child_context(nested_subckt.params.clone(), nested_instance_params);
 
         // Build node mapping for nested instance
         let mut nested_node_map: HashMap<String, String> = HashMap::new();
@@ -784,8 +789,8 @@ impl<'a> Parser<'a> {
                     let mut params = MosfetParams::nmos_default();
                     let mut mos_type = MosfetType::Nmos;
 
-                    for i in 5..tokens.len() {
-                        let s = Self::token_to_string(&tokens[i]);
+                    for token in tokens.iter().skip(5) {
+                        let s = Self::token_to_string(token);
                         let upper = s.to_uppercase();
                         if let Some(ModelDefinition::Nmos(p)) = self.models.get(&upper) {
                             params = p.clone();
@@ -815,8 +820,8 @@ impl<'a> Parser<'a> {
                 // Nested subcircuit instance - need to recursively expand
                 // Collect only Name and Value tokens (skip Eol, Eof, etc.)
                 let mut node_names: Vec<String> = Vec::new();
-                for i in 1..tokens.len() {
-                    match &tokens[i].token {
+                for token in tokens.iter().skip(1) {
+                    match &token.token {
                         Token::Name(s) | Token::Value(s) => {
                             node_names.push(s.clone());
                         }

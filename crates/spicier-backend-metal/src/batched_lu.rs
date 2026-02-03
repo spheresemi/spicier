@@ -666,12 +666,28 @@ mod tests {
         assert!(result.singular_indices.is_empty());
 
         let sol0 = result.solution(0).unwrap();
-        assert!((sol0[0] - 1.0).abs() < 1e-4, "sol0[0] = {} (expected 1.0)", sol0[0]);
-        assert!((sol0[1] - 2.0).abs() < 1e-4, "sol0[1] = {} (expected 2.0)", sol0[1]);
+        assert!(
+            (sol0[0] - 1.0).abs() < 1e-4,
+            "sol0[0] = {} (expected 1.0)",
+            sol0[0]
+        );
+        assert!(
+            (sol0[1] - 2.0).abs() < 1e-4,
+            "sol0[1] = {} (expected 2.0)",
+            sol0[1]
+        );
 
         let sol1 = result.solution(1).unwrap();
-        assert!((sol1[0] - 3.0).abs() < 1e-4, "sol1[0] = {} (expected 3.0)", sol1[0]);
-        assert!((sol1[1] - 4.0).abs() < 1e-4, "sol1[1] = {} (expected 4.0)", sol1[1]);
+        assert!(
+            (sol1[0] - 3.0).abs() < 1e-4,
+            "sol1[0] = {} (expected 3.0)",
+            sol1[0]
+        );
+        assert!(
+            (sol1[1] - 4.0).abs() < 1e-4,
+            "sol1[1] = {} (expected 4.0)",
+            sol1[1]
+        );
     }
 
     #[test]
@@ -699,8 +715,16 @@ mod tests {
         assert!(result.singular_indices.is_empty());
 
         let sol = result.solution(0).unwrap();
-        assert!((sol[0] - 2.0).abs() < 1e-4, "x[0] = {} (expected 2.0)", sol[0]);
-        assert!((sol[1] - 1.0).abs() < 1e-4, "x[1] = {} (expected 1.0)", sol[1]);
+        assert!(
+            (sol[0] - 2.0).abs() < 1e-4,
+            "x[0] = {} (expected 2.0)",
+            sol[0]
+        );
+        assert!(
+            (sol[1] - 1.0).abs() < 1e-4,
+            "x[1] = {} (expected 1.0)",
+            sol[1]
+        );
     }
 
     #[test]
@@ -727,7 +751,10 @@ mod tests {
 
         let result = solver.solve_batch(&matrices, &rhs, n, batch_size).unwrap();
 
-        assert!(result.is_singular(1), "Matrix 1 should be detected as singular");
+        assert!(
+            result.is_singular(1),
+            "Matrix 1 should be detected as singular"
+        );
         assert!(!result.is_singular(0), "Matrix 0 should not be singular");
     }
 
@@ -810,7 +837,9 @@ mod tests {
         let small_matrices = vec![1.0, 0.0, 0.0, 1.0];
         let small_rhs = vec![1.0, 2.0];
 
-        let result1 = solver.solve_batch(&small_matrices, &small_rhs, n, 1).unwrap();
+        let result1 = solver
+            .solve_batch(&small_matrices, &small_rhs, n, 1)
+            .unwrap();
         assert!(solver.has_cached_buffers());
         let sol1 = result1.solution(0).unwrap();
         assert!((sol1[0] - 1.0).abs() < 1e-4);
@@ -825,7 +854,9 @@ mod tests {
         ];
         let large_rhs = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
 
-        let result2 = solver.solve_batch(&large_matrices, &large_rhs, n, 4).unwrap();
+        let result2 = solver
+            .solve_batch(&large_matrices, &large_rhs, n, 4)
+            .unwrap();
         assert_eq!(result2.batch_size, 4);
 
         // Verify all solutions correct
@@ -833,10 +864,20 @@ mod tests {
             let sol = result2.solution(i).unwrap();
             let expected_0 = (i * 2 + 1) as f64;
             let expected_1 = (i * 2 + 2) as f64;
-            assert!((sol[0] - expected_0).abs() < 1e-4,
-                "batch {}: sol[0] = {} (expected {})", i, sol[0], expected_0);
-            assert!((sol[1] - expected_1).abs() < 1e-4,
-                "batch {}: sol[1] = {} (expected {})", i, sol[1], expected_1);
+            assert!(
+                (sol[0] - expected_0).abs() < 1e-4,
+                "batch {}: sol[0] = {} (expected {})",
+                i,
+                sol[0],
+                expected_0
+            );
+            assert!(
+                (sol[1] - expected_1).abs() < 1e-4,
+                "batch {}: sol[1] = {} (expected {})",
+                i,
+                sol[1],
+                expected_1
+            );
         }
     }
 
@@ -878,11 +919,27 @@ mod tests {
 
         // Verify solutions are correct for the new batch
         let sol0 = result2.solution(0).unwrap();
-        assert!((sol0[0] - 10.0).abs() < 1e-4, "sol0[0] = {} (expected 10.0)", sol0[0]);
-        assert!((sol0[1] - 20.0).abs() < 1e-4, "sol0[1] = {} (expected 20.0)", sol0[1]);
+        assert!(
+            (sol0[0] - 10.0).abs() < 1e-4,
+            "sol0[0] = {} (expected 10.0)",
+            sol0[0]
+        );
+        assert!(
+            (sol0[1] - 20.0).abs() < 1e-4,
+            "sol0[1] = {} (expected 20.0)",
+            sol0[1]
+        );
 
         let sol1 = result2.solution(1).unwrap();
-        assert!((sol1[0] - 30.0).abs() < 1e-4, "sol1[0] = {} (expected 30.0)", sol1[0]);
-        assert!((sol1[1] - 40.0).abs() < 1e-4, "sol1[1] = {} (expected 40.0)", sol1[1]);
+        assert!(
+            (sol1[0] - 30.0).abs() < 1e-4,
+            "sol1[0] = {} (expected 30.0)",
+            sol1[0]
+        );
+        assert!(
+            (sol1[1] - 40.0).abs() < 1e-4,
+            "sol1[1] = {} (expected 40.0)",
+            sol1[1]
+        );
     }
 }

@@ -35,73 +35,85 @@ pub struct GpuBatchedJacobi {
 impl GpuBatchedJacobi {
     /// Create a new GPU Jacobi preconditioner.
     pub fn new(ctx: Arc<WgpuContext>) -> Result<Self> {
-        let shader = ctx.device().create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Jacobi Preconditioner Shader"),
-            source: wgpu::ShaderSource::Wgsl(JACOBI_SHADER.into()),
-        });
+        let shader = ctx
+            .device()
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Jacobi Preconditioner Shader"),
+                source: wgpu::ShaderSource::Wgsl(JACOBI_SHADER.into()),
+            });
 
-        let layout = ctx.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Jacobi Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+        let layout = ctx
+            .device()
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Jacobi Bind Group Layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-            ],
-        });
+                ],
+            });
 
-        let pipeline_layout = ctx.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Jacobi Pipeline Layout"),
-            bind_group_layouts: &[&layout],
-            push_constant_ranges: &[],
-        });
+        let pipeline_layout =
+            ctx.device()
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Jacobi Pipeline Layout"),
+                    bind_group_layouts: &[&layout],
+                    push_constant_ranges: &[],
+                });
 
-        let pipeline = ctx.device().create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Jacobi Pipeline"),
-            layout: Some(&pipeline_layout),
-            module: &shader,
-            entry_point: Some("batched_jacobi_apply"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = ctx
+            .device()
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Jacobi Pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some("batched_jacobi_apply"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
-        Ok(Self { ctx, pipeline, layout })
+        Ok(Self {
+            ctx,
+            pipeline,
+            layout,
+        })
     }
 
     /// Extract inverse diagonal from CSR matrix values.
@@ -158,23 +170,32 @@ impl GpuBatchedJacobi {
             _pad: [0; 2],
         };
 
-        let uniform_buffer = self.ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Jacobi Uniforms"),
-            contents: bytemuck::bytes_of(&uniforms),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let uniform_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Jacobi Uniforms"),
+                    contents: bytemuck::bytes_of(&uniforms),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
 
-        let inv_diag_buffer = self.ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Jacobi inv_diag"),
-            contents: bytemuck::cast_slice(inv_diag),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let inv_diag_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Jacobi inv_diag"),
+                    contents: bytemuck::cast_slice(inv_diag),
+                    usage: wgpu::BufferUsages::STORAGE,
+                });
 
-        let x_buffer = self.ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Jacobi x"),
-            contents: bytemuck::cast_slice(x),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let x_buffer = self
+            .ctx
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Jacobi x"),
+                contents: bytemuck::cast_slice(x),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
 
         let output_size = (num_sweeps * n * std::mem::size_of::<f32>()) as u64;
         let y_buffer = self.ctx.device().create_buffer(&wgpu::BufferDescriptor {
@@ -191,20 +212,38 @@ impl GpuBatchedJacobi {
             mapped_at_creation: false,
         });
 
-        let bind_group = self.ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Jacobi Bind Group"),
-            layout: &self.layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: uniform_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: inv_diag_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: x_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: y_buffer.as_entire_binding() },
-            ],
-        });
+        let bind_group = self
+            .ctx
+            .device()
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Jacobi Bind Group"),
+                layout: &self.layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: inv_diag_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: x_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: y_buffer.as_entire_binding(),
+                    },
+                ],
+            });
 
-        let mut encoder = self.ctx.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Jacobi Encoder"),
-        });
+        let mut encoder =
+            self.ctx
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Jacobi Encoder"),
+                });
 
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -213,7 +252,7 @@ impl GpuBatchedJacobi {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
-            let workgroups = ((num_sweeps * n) as u32 + 255) / 256;
+            let workgroups = ((num_sweeps * n) as u32).div_ceil(256);
             pass.dispatch_workgroups(workgroups, 1, 1);
         }
 
@@ -333,7 +372,13 @@ impl GpuBatchedGmres {
         } else {
             None
         };
-        Ok(Self { ctx, spmv, vector_ops, jacobi, config })
+        Ok(Self {
+            ctx,
+            spmv,
+            vector_ops,
+            jacobi,
+            config,
+        })
     }
 
     /// Solve A*x = b for all sweep points.
@@ -347,6 +392,7 @@ impl GpuBatchedGmres {
     ///
     /// # Returns
     /// BatchedGmresResult with solutions and convergence info
+    #[allow(clippy::needless_range_loop)]
     pub fn solve(
         &self,
         structure: &BatchedCsrMatrix,
@@ -358,11 +404,10 @@ impl GpuBatchedGmres {
         let n = structure.n;
 
         // Extract preconditioner diagonal if using Jacobi
-        let inv_diag = if let Some(ref jacobi) = self.jacobi {
-            Some(jacobi.extract_inv_diagonal(structure, values, num_sweeps))
-        } else {
-            None
-        };
+        let inv_diag = self
+            .jacobi
+            .as_ref()
+            .map(|jacobi| jacobi.extract_inv_diagonal(structure, values, num_sweeps));
 
         // Initialize solution with x0 or zeros
         let mut x: Vec<f32> = match x0 {
@@ -393,8 +438,7 @@ impl GpuBatchedGmres {
 
         // Check initial convergence
         for i in 0..num_sweeps {
-            if r_norms[i] <= self.config.abs_tol ||
-               r_norms[i] <= self.config.rel_tol * b_norms[i] {
+            if r_norms[i] <= self.config.abs_tol || r_norms[i] <= self.config.rel_tol * b_norms[i] {
                 converged[i] = true;
                 residuals[i] = r_norms[i];
             }
@@ -430,14 +474,14 @@ impl GpuBatchedGmres {
             // and g_rhs[i][k] is the residual norm
             let mut g_cos: Vec<Vec<f32>> = Vec::new();
             let mut g_sin: Vec<Vec<f32>> = Vec::new();
-            let mut g_rhs: Vec<Vec<f32>> = (0..num_sweeps)
-                .map(|i| vec![r_norms[i]])
-                .collect();
+            let mut g_rhs: Vec<Vec<f32>> = (0..num_sweeps).map(|i| vec![r_norms[i]]).collect();
 
             let mut k = 0;
             while k < self.config.max_krylov {
                 // w = A * v_k (or M^{-1} * A * v_k for left preconditioning)
-                let mut w = self.spmv.multiply(structure, values, &v_basis[k], num_sweeps)?;
+                let mut w = self
+                    .spmv
+                    .multiply(structure, values, &v_basis[k], num_sweeps)?;
                 if let (Some(jacobi), Some(inv_d)) = (&self.jacobi, &inv_diag) {
                     w = jacobi.apply(inv_d, &w, num_sweeps, n)?;
                 }
@@ -528,8 +572,9 @@ impl GpuBatchedGmres {
                     if !converged[i] {
                         let res_norm = g_rhs[i][k + 1].abs();
                         iterations[i] += 1;
-                        if res_norm <= self.config.abs_tol ||
-                           res_norm <= self.config.rel_tol * initial_norms[i] {
+                        if res_norm <= self.config.abs_tol
+                            || res_norm <= self.config.rel_tol * initial_norms[i]
+                        {
                             converged[i] = true;
                             residuals[i] = res_norm;
                         } else {
@@ -626,195 +671,219 @@ impl GpuBatchedVectorOps {
     /// Create batched vector operations.
     pub fn new(ctx: Arc<WgpuContext>) -> Result<Self> {
         // AXPY shader
-        let axpy_shader = ctx.device().create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Batched AXPY Shader"),
-            source: wgpu::ShaderSource::Wgsl(AXPY_SHADER.into()),
-        });
+        let axpy_shader = ctx
+            .device()
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Batched AXPY Shader"),
+                source: wgpu::ShaderSource::Wgsl(AXPY_SHADER.into()),
+            });
 
-        let axpy_layout = ctx.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("AXPY Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+        let axpy_layout = ctx
+            .device()
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("AXPY Bind Group Layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-            ],
-        });
+                ],
+            });
 
-        let axpy_pipeline_layout = ctx.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("AXPY Pipeline Layout"),
-            bind_group_layouts: &[&axpy_layout],
-            push_constant_ranges: &[],
-        });
+        let axpy_pipeline_layout =
+            ctx.device()
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("AXPY Pipeline Layout"),
+                    bind_group_layouts: &[&axpy_layout],
+                    push_constant_ranges: &[],
+                });
 
-        let axpy_pipeline = ctx.device().create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("AXPY Pipeline"),
-            layout: Some(&axpy_pipeline_layout),
-            module: &axpy_shader,
-            entry_point: Some("batched_axpy"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let axpy_pipeline =
+            ctx.device()
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("AXPY Pipeline"),
+                    layout: Some(&axpy_pipeline_layout),
+                    module: &axpy_shader,
+                    entry_point: Some("batched_axpy"),
+                    compilation_options: Default::default(),
+                    cache: None,
+                });
 
         // Dot product shader
-        let dot_shader = ctx.device().create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Batched Dot Shader"),
-            source: wgpu::ShaderSource::Wgsl(DOT_SHADER.into()),
-        });
+        let dot_shader = ctx
+            .device()
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Batched Dot Shader"),
+                source: wgpu::ShaderSource::Wgsl(DOT_SHADER.into()),
+            });
 
-        let dot_layout = ctx.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Dot Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+        let dot_layout = ctx
+            .device()
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Dot Bind Group Layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-            ],
-        });
+                ],
+            });
 
-        let dot_pipeline_layout = ctx.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Dot Pipeline Layout"),
-            bind_group_layouts: &[&dot_layout],
-            push_constant_ranges: &[],
-        });
+        let dot_pipeline_layout =
+            ctx.device()
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Dot Pipeline Layout"),
+                    bind_group_layouts: &[&dot_layout],
+                    push_constant_ranges: &[],
+                });
 
-        let dot_pipeline = ctx.device().create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Dot Pipeline"),
-            layout: Some(&dot_pipeline_layout),
-            module: &dot_shader,
-            entry_point: Some("batched_dot"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let dot_pipeline = ctx
+            .device()
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Dot Pipeline"),
+                layout: Some(&dot_pipeline_layout),
+                module: &dot_shader,
+                entry_point: Some("batched_dot"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         // Norm shader
-        let norm_shader = ctx.device().create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Batched Norm Shader"),
-            source: wgpu::ShaderSource::Wgsl(NORM_SHADER.into()),
-        });
+        let norm_shader = ctx
+            .device()
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Batched Norm Shader"),
+                source: wgpu::ShaderSource::Wgsl(NORM_SHADER.into()),
+            });
 
-        let norm_layout = ctx.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Norm Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+        let norm_layout = ctx
+            .device()
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Norm Bind Group Layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-            ],
-        });
+                ],
+            });
 
-        let norm_pipeline_layout = ctx.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Norm Pipeline Layout"),
-            bind_group_layouts: &[&norm_layout],
-            push_constant_ranges: &[],
-        });
+        let norm_pipeline_layout =
+            ctx.device()
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Norm Pipeline Layout"),
+                    bind_group_layouts: &[&norm_layout],
+                    push_constant_ranges: &[],
+                });
 
-        let norm_pipeline = ctx.device().create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Norm Pipeline"),
-            layout: Some(&norm_pipeline_layout),
-            module: &norm_shader,
-            entry_point: Some("batched_norm"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let norm_pipeline =
+            ctx.device()
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("Norm Pipeline"),
+                    layout: Some(&norm_pipeline_layout),
+                    module: &norm_shader,
+                    entry_point: Some("batched_norm"),
+                    compilation_options: Default::default(),
+                    cache: None,
+                });
 
         Ok(Self {
             ctx,
@@ -828,7 +897,15 @@ impl GpuBatchedVectorOps {
     }
 
     /// Compute z = alpha * x + beta * y for all sweeps.
-    pub fn axpy(&self, x: &[f32], y: &[f32], alpha: f32, beta: f32, num_sweeps: usize, n: usize) -> Result<Vec<f32>> {
+    pub fn axpy(
+        &self,
+        x: &[f32],
+        y: &[f32],
+        alpha: f32,
+        beta: f32,
+        num_sweeps: usize,
+        n: usize,
+    ) -> Result<Vec<f32>> {
         #[repr(C)]
         #[derive(Clone, Copy, Pod, Zeroable)]
         struct Uniforms {
@@ -845,23 +922,32 @@ impl GpuBatchedVectorOps {
             beta,
         };
 
-        let uniform_buffer = self.ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("AXPY Uniforms"),
-            contents: bytemuck::bytes_of(&uniforms),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let uniform_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("AXPY Uniforms"),
+                    contents: bytemuck::bytes_of(&uniforms),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
 
-        let x_buffer = self.ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("AXPY x"),
-            contents: bytemuck::cast_slice(x),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let x_buffer = self
+            .ctx
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("AXPY x"),
+                contents: bytemuck::cast_slice(x),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
 
-        let y_buffer = self.ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("AXPY y"),
-            contents: bytemuck::cast_slice(y),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let y_buffer = self
+            .ctx
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("AXPY y"),
+                contents: bytemuck::cast_slice(y),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
 
         let output_size = (num_sweeps * n * std::mem::size_of::<f32>()) as u64;
         let z_buffer = self.ctx.device().create_buffer(&wgpu::BufferDescriptor {
@@ -878,20 +964,38 @@ impl GpuBatchedVectorOps {
             mapped_at_creation: false,
         });
 
-        let bind_group = self.ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("AXPY Bind Group"),
-            layout: &self.axpy_layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: uniform_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: x_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: y_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: z_buffer.as_entire_binding() },
-            ],
-        });
+        let bind_group = self
+            .ctx
+            .device()
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("AXPY Bind Group"),
+                layout: &self.axpy_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: x_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: y_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: z_buffer.as_entire_binding(),
+                    },
+                ],
+            });
 
-        let mut encoder = self.ctx.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("AXPY Encoder"),
-        });
+        let mut encoder =
+            self.ctx
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("AXPY Encoder"),
+                });
 
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -900,7 +1004,7 @@ impl GpuBatchedVectorOps {
             });
             pass.set_pipeline(&self.axpy_pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
-            let workgroups = ((num_sweeps * n) as u32 + 255) / 256;
+            let workgroups = ((num_sweeps * n) as u32).div_ceil(256);
             pass.dispatch_workgroups(workgroups, 1, 1);
         }
 
@@ -926,23 +1030,32 @@ impl GpuBatchedVectorOps {
             _pad: [0; 2],
         };
 
-        let uniform_buffer = self.ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Dot Uniforms"),
-            contents: bytemuck::bytes_of(&uniforms),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let uniform_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Dot Uniforms"),
+                    contents: bytemuck::bytes_of(&uniforms),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
 
-        let x_buffer = self.ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Dot x"),
-            contents: bytemuck::cast_slice(x),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let x_buffer = self
+            .ctx
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Dot x"),
+                contents: bytemuck::cast_slice(x),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
 
-        let y_buffer = self.ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Dot y"),
-            contents: bytemuck::cast_slice(y),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let y_buffer = self
+            .ctx
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Dot y"),
+                contents: bytemuck::cast_slice(y),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
 
         let output_size = (num_sweeps * std::mem::size_of::<f32>()) as u64;
         let result_buffer = self.ctx.device().create_buffer(&wgpu::BufferDescriptor {
@@ -959,20 +1072,38 @@ impl GpuBatchedVectorOps {
             mapped_at_creation: false,
         });
 
-        let bind_group = self.ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Dot Bind Group"),
-            layout: &self.dot_layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: uniform_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: x_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: y_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: result_buffer.as_entire_binding() },
-            ],
-        });
+        let bind_group = self
+            .ctx
+            .device()
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Dot Bind Group"),
+                layout: &self.dot_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: x_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: y_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: result_buffer.as_entire_binding(),
+                    },
+                ],
+            });
 
-        let mut encoder = self.ctx.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Dot Encoder"),
-        });
+        let mut encoder =
+            self.ctx
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Dot Encoder"),
+                });
 
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -1006,17 +1137,23 @@ impl GpuBatchedVectorOps {
             _pad: [0; 2],
         };
 
-        let uniform_buffer = self.ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Norm Uniforms"),
-            contents: bytemuck::bytes_of(&uniforms),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let uniform_buffer =
+            self.ctx
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Norm Uniforms"),
+                    contents: bytemuck::bytes_of(&uniforms),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
 
-        let x_buffer = self.ctx.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Norm x"),
-            contents: bytemuck::cast_slice(x),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let x_buffer = self
+            .ctx
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Norm x"),
+                contents: bytemuck::cast_slice(x),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
 
         let output_size = (num_sweeps * std::mem::size_of::<f32>()) as u64;
         let result_buffer = self.ctx.device().create_buffer(&wgpu::BufferDescriptor {
@@ -1033,19 +1170,34 @@ impl GpuBatchedVectorOps {
             mapped_at_creation: false,
         });
 
-        let bind_group = self.ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Norm Bind Group"),
-            layout: &self.norm_layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: uniform_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: x_buffer.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: result_buffer.as_entire_binding() },
-            ],
-        });
+        let bind_group = self
+            .ctx
+            .device()
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Norm Bind Group"),
+                layout: &self.norm_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: x_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: result_buffer.as_entire_binding(),
+                    },
+                ],
+            });
 
-        let mut encoder = self.ctx.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Norm Encoder"),
-        });
+        let mut encoder =
+            self.ctx
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Norm Encoder"),
+                });
 
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -1253,11 +1405,7 @@ mod tests {
         let gmres = GpuBatchedGmres::new(ctx, config).unwrap();
 
         // Solve I*x = b where I is identity
-        let structure = BatchedCsrMatrix::new(
-            3,
-            vec![0, 1, 2, 3],
-            vec![0, 1, 2],
-        );
+        let structure = BatchedCsrMatrix::new(3, vec![0, 1, 2, 3], vec![0, 1, 2]);
         let values = vec![1.0, 1.0, 1.0];
         let b = vec![1.0, 2.0, 3.0];
 
@@ -1284,11 +1432,7 @@ mod tests {
 
         // Solve diag([2, 3, 4]) * x = [2, 6, 12]
         // Expected: x = [1, 2, 3]
-        let structure = BatchedCsrMatrix::new(
-            3,
-            vec![0, 1, 2, 3],
-            vec![0, 1, 2],
-        );
+        let structure = BatchedCsrMatrix::new(3, vec![0, 1, 2, 3], vec![0, 1, 2]);
         let values = vec![2.0, 3.0, 4.0];
         let b = vec![2.0, 6.0, 12.0];
 
@@ -1342,11 +1486,7 @@ mod tests {
 
         // Solve diag([2, 3, 4]) * x = [2, 6, 12]
         // Expected: x = [1, 2, 3]
-        let structure = BatchedCsrMatrix::new(
-            3,
-            vec![0, 1, 2, 3],
-            vec![0, 1, 2],
-        );
+        let structure = BatchedCsrMatrix::new(3, vec![0, 1, 2, 3], vec![0, 1, 2]);
         let values = vec![2.0, 3.0, 4.0];
         let b = vec![2.0, 6.0, 12.0];
 
@@ -1374,11 +1514,7 @@ mod tests {
         // Solve 2 systems in parallel:
         // System 0: diag([2, 3]) * x = [4, 9] => x = [2, 3]
         // System 1: diag([1, 2]) * x = [5, 8] => x = [5, 4]
-        let structure = BatchedCsrMatrix::new(
-            2,
-            vec![0, 1, 2],
-            vec![0, 1],
-        );
+        let structure = BatchedCsrMatrix::new(2, vec![0, 1, 2], vec![0, 1]);
         // values = [sweep0 values, sweep1 values] = [2, 3, 1, 2]
         let values = vec![2.0, 3.0, 1.0, 2.0];
         // b = [sweep0 b, sweep1 b] = [4, 9, 5, 8]

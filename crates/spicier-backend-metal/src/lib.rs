@@ -28,8 +28,8 @@ pub use batched_gmres::{
     BatchedGmresConfig, BatchedGmresResult, GpuBatchedGmres, GpuBatchedVectorOps,
 };
 pub use batched_lu::{
-    BatchedSolveResult, GpuBatchConfig, MetalBatchedLuSolver, MAX_MATRIX_SIZE, MIN_BATCH_SIZE,
-    MIN_MATRIX_SIZE,
+    BatchedSolveResult, GpuBatchConfig, MAX_MATRIX_SIZE, MIN_BATCH_SIZE, MIN_MATRIX_SIZE,
+    MetalBatchedLuSolver,
 };
 pub use batched_spmv::{BatchedCsrMatrix, GpuBatchedSpmv};
 pub use buffer_pool::{BufferPool, BufferPoolStats};
@@ -45,8 +45,8 @@ pub use device_eval::{
 pub use error::{Result, WgpuError};
 pub use gpu_newton::{
     BjtNodes, BjtStampLocations, DiodeDeviceInfo, DiodeNodes, DiodeStampLocations,
-    GpuCircuitTopology, GpuNewtonRaphson, GpuNrConfig, GpuNrResult, MosfetDeviceInfo,
-    MosfetNodes, MosfetStampLocations, VoltageLimitParams,
+    GpuCircuitTopology, GpuNewtonRaphson, GpuNrConfig, GpuNrResult, MosfetDeviceInfo, MosfetNodes,
+    MosfetStampLocations, VoltageLimitParams,
 };
 pub use ilu_preconditioner::GpuIlu0Preconditioner;
 pub use matrix_assembly::{ConductanceStamp, CurrentStamp, GpuMatrixAssembler, GpuRhsAssembler};

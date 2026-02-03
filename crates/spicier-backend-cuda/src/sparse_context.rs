@@ -73,12 +73,11 @@ impl Drop for CudaSparseContext {
 // cuSOLVER sparse handle creation/destruction helpers
 // These are needed because cudarc doesn't expose these in the safe result module
 
-fn create_cusolver_sp_handle() -> std::result::Result<cudarc::cusolver::sys::cusolverSpHandle_t, String> {
+fn create_cusolver_sp_handle()
+-> std::result::Result<cudarc::cusolver::sys::cusolverSpHandle_t, String> {
     use std::mem::MaybeUninit;
     let mut handle = MaybeUninit::uninit();
-    let status = unsafe {
-        cudarc::cusolver::sys::cusolverSpCreate(handle.as_mut_ptr())
-    };
+    let status = unsafe { cudarc::cusolver::sys::cusolverSpCreate(handle.as_mut_ptr()) };
     if status != cudarc::cusolver::sys::cusolverStatus_t::CUSOLVER_STATUS_SUCCESS {
         return Err(format!("cusolverSpCreate failed: {:?}", status));
     }
@@ -186,12 +185,7 @@ mod tests {
 
     #[test]
     fn test_csr_descriptor_from_triplets() {
-        let triplets = vec![
-            (0, 0, 4.0),
-            (0, 1, 1.0),
-            (1, 0, 1.0),
-            (1, 1, 3.0),
-        ];
+        let triplets = vec![(0, 0, 4.0), (0, 1, 1.0), (1, 0, 1.0), (1, 1, 3.0)];
 
         let (desc, values) = CsrMatrixDescriptor::from_triplets(2, &triplets);
 
@@ -227,6 +221,10 @@ mod tests {
 
         // Create sparse context
         let sparse_ctx = CudaSparseContext::new(cuda_ctx);
-        assert!(sparse_ctx.is_ok(), "Failed to create sparse context: {:?}", sparse_ctx.err());
+        assert!(
+            sparse_ctx.is_ok(),
+            "Failed to create sparse context: {:?}",
+            sparse_ctx.err()
+        );
     }
 }

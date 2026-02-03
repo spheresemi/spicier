@@ -67,10 +67,14 @@ impl SensitivityParam {
             SensitivityParam::Inductance { name, .. } => name.clone(),
             SensitivityParam::VoltageSource { name, .. } => name.clone(),
             SensitivityParam::CurrentSource { name, .. } => name.clone(),
-            SensitivityParam::DeviceParam { device_name, param, .. } => {
+            SensitivityParam::DeviceParam {
+                device_name, param, ..
+            } => {
                 format!("{}.{}", device_name, param)
             }
-            SensitivityParam::ModelParam { model_name, param, .. } => {
+            SensitivityParam::ModelParam {
+                model_name, param, ..
+            } => {
                 format!("{}.{}", model_name, param)
             }
         }
