@@ -6,6 +6,7 @@
 pub const WARP_SIZE: usize = 32;
 
 /// Describes the memory layout for a batch of matrices.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct BatchLayout {
     /// Original matrix dimension (n×n).
@@ -33,6 +34,7 @@ impl BatchLayout {
     }
 
     /// Create a layout without padding.
+    #[allow(dead_code)]
     pub fn unpadded(n: usize, batch_size: usize) -> Self {
         Self {
             n,
@@ -73,6 +75,7 @@ impl BatchLayout {
     }
 
     /// Check if padding is actually being used.
+    #[allow(dead_code)]
     #[inline]
     pub fn has_padding(&self) -> bool {
         self.padded_row_stride > self.n

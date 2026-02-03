@@ -179,6 +179,7 @@ impl NoiseSource {
 ///
 /// # Returns
 /// Noise voltage density in V/√Hz
+#[allow(dead_code)]
 pub fn thermal_noise_voltage(resistance: f64, temperature: f64) -> f64 {
     (4.0 * BOLTZMANN * temperature * resistance).sqrt()
 }
@@ -190,6 +191,7 @@ pub fn thermal_noise_voltage(resistance: f64, temperature: f64) -> f64 {
 ///
 /// # Returns
 /// Noise current density in A/√Hz
+#[allow(dead_code)]
 pub fn shot_noise_current(current: f64) -> f64 {
     (2.0 * ELECTRON_CHARGE * current.abs()).sqrt()
 }
@@ -204,6 +206,7 @@ pub fn shot_noise_current(current: f64) -> f64 {
 ///
 /// # Returns
 /// Noise current density in A/√Hz
+#[allow(dead_code)]
 pub fn flicker_noise_current(kf: f64, af: f64, current: f64, frequency: f64) -> f64 {
     if frequency > 0.0 {
         (kf * current.abs().powf(af) / frequency).sqrt()

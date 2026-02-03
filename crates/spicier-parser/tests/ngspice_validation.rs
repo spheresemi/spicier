@@ -1617,6 +1617,7 @@ enum GoldenAnalysis {
     },
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct GoldenTolerances {
     voltage: f64,
@@ -1624,6 +1625,7 @@ struct GoldenTolerances {
     current: f64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct AcSweepParams {
     #[serde(rename = "type")]
@@ -1646,6 +1648,7 @@ struct AcTolerances {
     phase_deg: f64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct TranParams {
     tstep: f64,
@@ -5011,6 +5014,240 @@ fn test_ac_coupled_lc_resonator() {
             freq / 1000.0, gain_db
         );
     }
+}
+
+// ============================================================================
+// Complex Circuit Topology Tests - Phase 10
+// ============================================================================
+
+/// Test NPN current mirror
+///
+/// Basic current mirror: Q1 sets reference current, Q2 mirrors it.
+/// RREF sets Iref = (VCC - Vbe) / RREF ≈ 1mA
+/// Q2 mirrors this current into RL, so V(3) = VCC - Ic*RL
+#[test]
+fn test_dc_npn_current_mirror() {
+    let netlist_str = r#"NPN Current Mirror
+.MODEL QMOD NPN (IS=1e-15 BF=100)
+VCC 1 0 DC 10
+RREF 1 2 9.3k
+Q1 2 2 0 QMOD
+Q2 3 2 0 QMOD
+RL 1 3 5k
+.end
+"#;
+
+    let netlist = parse(netlist_str).expect("Parse failed");
+    assert!(netlist.has_nonlinear_devices(), "Should have nonlinear BJTs");
+
+    let solution = solve_dc_nonlinear(&netlist).expect("DC solve failed");
+
+    // Q1 is diode-connected, sets Vbe ≈ 0.7V
+    let v2 = solution.voltage(NodeId::new(2));
+    assert!(
+        v2 > 0.5 && v2 < 0.9,
+        "V(2) = {} (expected ~0.7V, diode-connected Vbe)",
+        v2
+    );
+
+    // Iref ≈ (10 - 0.7) / 9.3k ≈ 1mA
+    // Q2 mirrors this, so V(3) = 10 - 1mA * 5k = 5V
+    let v3 = solution.voltage(NodeId::new(3));
+    assert!(
+        v3 > 3.0 && v3 < 7.0,
+        "V(3) = {} (expected ~5V from mirrored current)",
+        v3
+    );
+}
+
+/// Test NPN differential pair (balanced inputs)
+///
+/// Classic diff pair with matched transistors and tail current source.
+/// With Vin=0 (equal inputs), the tail current splits evenly.
+#[test]
+fn test_dc_npn_differential_pair() {
+    let netlist_str = r#"NPN Diff Pair
+.MODEL QMOD NPN (IS=1e-15 BF=100)
+VCC 1 0 DC 10
+VIN 5 0 DC 0
+RC1 1 2 5k
+RC2 1 3 5k
+Q1 2 5 4 QMOD
+Q2 3 0 4 QMOD
+REE 4 6 10k
+VEE 6 0 DC -10
+.end
+"#;
+
+    let netlist = parse(netlist_str).expect("Parse failed");
+    let solution = solve_dc_nonlinear(&netlist).expect("DC solve failed");
+
+    // With balanced inputs (Vin=0, Q2 base at 0), tail current splits equally
+    let v2 = solution.voltage(NodeId::new(2));
+    let v3 = solution.voltage(NodeId::new(3));
+
+    // Tail current: Itail = (0 - Vbe - VEE) / REE ≈ (0 - 0.7 + 10) / 10k ≈ 0.93mA
+    // Each transistor gets ~0.465mA, so Vc = VCC - Ic*RC = 10 - 0.465mA*5k ≈ 7.7V
+    assert!(
+        v2 > 6.0 && v2 < 9.0,
+        "V(2) = {} (expected ~7.5V)",
+        v2
+    );
+    assert!(
+        v3 > 6.0 && v3 < 9.0,
+        "V(3) = {} (expected ~7.5V)",
+        v3
+    );
+
+    // With balanced inputs, outputs should be approximately equal
+    let diff = (v2 - v3).abs();
+    assert!(
+        diff < 0.5,
+        "V(2)-V(3) = {} (should be near 0 for balanced pair)",
+        diff
+    );
+}
+
+/// Test JFET current source with self-bias
+///
+/// JFET with source resistor acts as current source: Vgs = -Ids*Rs
+/// Operating point determined by intersection of JFET curve and load line.
+#[test]
+fn test_dc_njf_current_source() {
+    let netlist_str = r#"NJF Current Source
+.MODEL JMOD NJF (VTO=-2 BETA=1e-4 LAMBDA=0)
+VDD 1 0 DC 20
+RL 1 2 10k
+J1 2 3 3 JMOD
+RS 3 0 1k
+.end
+"#;
+
+    let netlist = parse(netlist_str).expect("Parse failed");
+    assert!(netlist.has_nonlinear_devices(), "Should have nonlinear JFET");
+
+    let solution = solve_dc_nonlinear(&netlist).expect("DC solve failed");
+
+    // Self-bias: Vgs = -Ids * Rs
+    // For saturation: Ids = beta * (Vgs - Vto)^2 = beta * (Vgs + 2)^2
+    // Iterating: with Rs = 1k, Ids ≈ 0.4mA converges (Vgs ≈ -0.4V)
+    let v3 = solution.voltage(NodeId::new(3));
+    assert!(
+        v3 > 0.1 && v3 < 1.5,
+        "V(3) = {} (expected source voltage from self-bias)",
+        v3
+    );
+
+    // V(2) = VDD - Ids * RL = 20 - 0.4mA * 10k ≈ 16V
+    let v2 = solution.voltage(NodeId::new(2));
+    assert!(
+        v2 > 10.0 && v2 < 20.0,
+        "V(2) = {} (expected drain voltage)",
+        v2
+    );
+
+    // Verify JFET is conducting (V(2) < VDD)
+    assert!(
+        v2 < 20.0 - 0.5,
+        "JFET should be conducting: V(2) = {} should be < VDD",
+        v2
+    );
+}
+
+/// Test transformer-coupled amplifier (AC analysis)
+///
+/// Transformer couples signal between stages while providing DC isolation.
+/// Tests the mutual inductance mechanism in an amplifier context.
+#[test]
+fn test_ac_transformer_coupled_amplifier() {
+    // Transformer-coupled amplifier test using custom AC stamper
+    // Primary driven by voltage source through Rs, secondary drives load RL
+
+    struct TransformerAmpStamper {
+        rs: f64,    // Source resistance
+        l1: f64,    // Primary inductance
+        l2: f64,    // Secondary inductance
+        k: f64,     // Coupling coefficient
+        rl: f64,    // Load resistance
+    }
+
+    impl AcStamper for TransformerAmpStamper {
+        fn stamp_ac(&self, mna: &mut ComplexMna, omega: f64) {
+            // Nodes: 0=input, 1=primary, 2=output (secondary)
+            // Ground = 0
+
+            // AC input source (1V)
+            mna.stamp_voltage_source(Some(0), None, 0, Complex::new(1.0, 0.0));
+
+            // Rs from input to primary
+            mna.stamp_conductance(Some(0), Some(1), 1.0 / self.rs);
+
+            // Primary inductor L1 (branch 1)
+            mna.stamp_inductor(Some(1), None, 1, omega, self.l1);
+
+            // Secondary inductor L2 (branch 2)
+            mna.stamp_inductor(Some(2), None, 2, omega, self.l2);
+
+            // Mutual inductance coupling
+            let m = self.k * (self.l1 * self.l2).sqrt();
+            let jwm = Complex::new(0.0, omega * m);
+
+            // Coupling: V1 += jωM * I2, V2 += jωM * I1
+            let br1 = mna.num_nodes() + 1;
+            let br2 = mna.num_nodes() + 2;
+            mna.add_element(br1, br2, jwm);
+            mna.add_element(br2, br1, jwm);
+
+            // Load RL on secondary
+            mna.stamp_conductance(Some(2), None, 1.0 / self.rl);
+        }
+
+        fn num_nodes(&self) -> usize {
+            3 // input, primary, secondary/output
+        }
+
+        fn num_vsources(&self) -> usize {
+            3 // Vsource + 2 inductor branches
+        }
+    }
+
+    // 1:2 step-up transformer
+    let l1 = 1e-3;    // 1mH primary
+    let l2 = 4e-3;    // 4mH secondary (N2/N1 = sqrt(L2/L1) = 2)
+    let k = 0.95;     // High but not ideal coupling
+    let rs = 50.0;
+    let rl = 200.0;   // 200 ohm load (reflects to 50 ohm at primary)
+
+    let stamper = TransformerAmpStamper { rs, l1, l2, k, rl };
+
+    // Test at mid-frequency where transformer behavior dominates
+    let params = AcParams {
+        sweep_type: AcSweepType::Linear,
+        num_points: 1,
+        fstart: 10_000.0,  // 10 kHz
+        fstop: 10_000.0,
+    };
+
+    let result = solve_ac(&stamper, &params).expect("AC solve failed");
+    let mag_db = result.magnitude_db(2);
+    let (_, gain_db) = mag_db[0];
+
+    // For 1:2 step-up transformer, voltage gain ≈ 2 (6 dB)
+    // Account for losses from coupling and resistive dividers
+    assert!(
+        gain_db > -3.0 && gain_db < 12.0,
+        "Transformer amp gain = {:.1} dB (expected positive gain for step-up)",
+        gain_db
+    );
+
+    // Verify phase is reasonable (not wildly off)
+    let phase = result.phase_deg(2);
+    let (_, phase_deg) = phase[0];
+    assert!(
+        phase_deg.is_finite(),
+        "Phase should be finite, got {}",
+        phase_deg
+    );
 }
 
 /// Test NMOS common-source amplifier AC gain

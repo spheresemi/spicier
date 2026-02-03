@@ -4,7 +4,7 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use nalgebra::DVector;
 #[cfg(any(feature = "metal", feature = "faer", feature = "accelerate"))]
 use spicier_batched_sweep::GpuBatchConfig;
-use spicier_batched_sweep::{BackendSelector, BackendType, solve_batched_sweep_gpu};
+use spicier_batched_sweep::{BackendSelector, solve_batched_sweep_gpu};
 #[cfg(feature = "faer")]
 use spicier_batched_sweep::{BatchedLuSolver, FaerBatchedSolver, FaerSparseCachedBatchedSolver};
 #[cfg(feature = "parallel")]
