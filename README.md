@@ -94,8 +94,9 @@ Compatibility with existing SPICE netlists is a **goal**, not a constraint.
 ### Core Simulation
 
 * **Circuit Representation**: MNA matrix stamping with automatic ground node handling
-* **Device Models**: R, L, C, V, I (passive + sources), Diode (Shockley), MOSFET Level 1 (NMOS/PMOS)
+* **Device Models**: R, L, C, V, I (passive + sources), Diode (Shockley), MOSFET Level 1 (NMOS/PMOS), JFET, BJT
 * **Controlled Sources**: VCVS (E), VCCS (G), CCCS (F), CCVS (H)
+* **Coupled Elements**: K (mutual inductance), T (transmission line)
 * **Behavioral Sources**: B elements with expression parsing (V(node), I(device), time, math functions)
 * **Subcircuits**: Hierarchical .SUBCKT/.ENDS with nested expansion
 
@@ -132,7 +133,7 @@ Compatibility with existing SPICE netlists is a **goal**, not a constraint.
 ### Infrastructure
 
 * **Cargo workspace**: 13 crates (core, solver, devices, parser, cli, simd, validate, backend-cpu, backend-cuda, backend-metal, backend-mps, batched-sweep)
-* **SPICE Parser**: R, C, L, V, I, D, M, E, G, F, H, B elements; .MODEL; SI suffixes
+* **SPICE Parser**: R, C, L, V, I, D, M, J, Q, K, T, E, G, F, H, B elements; .MODEL; .PARAM; SI suffixes
 * **Validation Suite**: 40+ tests against analytical solutions and ngspice
 * **~400 tests passing**, clippy clean
 * **GitHub Actions CI** (Linux, macOS, Windows)
@@ -281,11 +282,12 @@ Spicier exists to explore what becomes possible when these constraints are remov
 
 ### Future
 
-#### Phase 12 — Extended Features
+#### Phase 12 — Extended Features ✅
 
-* Noise analysis
-* Additional device models (BJT, JFET, BSIM)
+* Noise analysis (.NOISE)
+* Additional device models (BJT, JFET)
 * Mutual inductance (K element)
+* Transmission lines (T element — lumped LC model)
 * .PARAM / .MEASURE support
 
 ---

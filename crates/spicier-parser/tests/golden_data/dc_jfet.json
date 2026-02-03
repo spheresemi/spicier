@@ -125,6 +125,24 @@
         },
         "notes": "Lambda=0.01 causes slight increase in Ids: Ids=beta*Vov^2*(1+lambda*Vds)"
       }
+    },
+    {
+      "name": "njf_current_source",
+      "description": "N-channel JFET as a current source with self-bias",
+      "netlist": "NJF Current Source\n.MODEL JMOD NJF (VTO=-2 BETA=1e-4 LAMBDA=0)\nVDD 1 0 DC 20\nRL 1 2 10k\nJ1 2 3 3 JMOD\nRS 3 0 1k\n.end",
+      "analysis": {
+        "type": "dc_op",
+        "results": {
+          "V(1)": 20.0,
+          "V(2)": 16.0,
+          "V(3)": 0.4
+        },
+        "tolerances": {
+          "voltage": 0.5,
+          "current": 1e-5
+        },
+        "notes": "Self-biased JFET current source: Vgs=-Ids*Rs, Ids≈0.4mA, V(2)=VDD-Ids*RL"
+      }
     }
   ]
 }
