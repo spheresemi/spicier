@@ -63,7 +63,7 @@ pub use mosfet::bsim4::{Bsim4Mosfet, Bsim4Params, Bsim4Region};
 pub use mutual::MutualInductance;
 
 // Re-export passive elements
-pub use passive::{Capacitor, Inductor, Resistor};
+pub use passive::{Capacitor, CapacitorParams, Inductor, Resistor};
 
 // Re-export transmission line
 pub use tline::TransmissionLine;
