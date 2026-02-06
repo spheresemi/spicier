@@ -10,7 +10,7 @@ use spicier_devices::mosfet::{
     Bsim3Mosfet, Bsim3Params, Bsim4Mosfet, Bsim4Params, Mosfet, MosfetParams, MosfetType,
 };
 use spicier_devices::mutual::MutualInductance;
-use spicier_devices::passive::{Capacitor, Inductor, Resistor};
+use spicier_devices::passive::{Capacitor, CapacitorParams, Inductor, Resistor};
 use spicier_devices::sources::{CurrentSource, VoltageSource};
 use spicier_devices::tline::TransmissionLine;
 
@@ -124,10 +124,61 @@ impl<'a> Parser<'a> {
 
         let node_pos = self.expect_node(line)?;
         let node_neg = self.expect_node(line)?;
-        let value = self.expect_value(line)?;
 
-        let capacitor = Capacitor::new(name, node_pos, node_neg, value);
-        self.netlist.add_device(capacitor);
+        // Try to parse a numeric value first (bare value syntax: C1 n1 n2 10p)
+        if let Some(value) = self.try_value() {
+            let capacitor = Capacitor::new(name, node_pos, node_neg, value);
+            self.netlist.add_device(capacitor);
+            self.skip_to_eol();
+            return Ok(());
+        }
+
+        // Try model reference: C1 n1 n2 MODEL_NAME [W=... L=...]
+        let mut params: Option<CapacitorParams> = None;
+        if let Token::Name(n) = self.peek() {
+            let model_name = n.clone().to_uppercase();
+            if !model_name.contains('=') && model_name != "W" && model_name != "L" {
+                self.advance();
+                if let Some(ModelDefinition::Capacitor(cp)) = self.models.get(&model_name) {
+                    params = Some(cp.clone());
+                }
+            }
+        }
+
+        if let Some(mut cp) = params {
+            // Parse optional instance parameters: W=val L=val C=val
+            loop {
+                match self.peek() {
+                    Token::Eol | Token::Eof => break,
+                    Token::Name(n) => {
+                        let pname = n.clone().to_uppercase();
+                        self.advance();
+                        if matches!(self.peek(), Token::Equals) {
+                            self.advance();
+                            if let Ok(val) = self.expect_value(line) {
+                                match pname.as_str() {
+                                    "W" => cp.w = val,
+                                    "L" => cp.l = val,
+                                    "C" => cp.c_base = val,
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        self.advance();
+                    }
+                }
+            }
+
+            let capacitor = Capacitor::with_params(name, node_pos, node_neg, cp);
+            self.netlist.add_device(capacitor);
+        } else {
+            // No model and no value - try to parse as value (will produce error)
+            let value = self.expect_value(line)?;
+            let capacitor = Capacitor::new(name, node_pos, node_neg, value);
+            self.netlist.add_device(capacitor);
+        }
 
         self.skip_to_eol();
         Ok(())

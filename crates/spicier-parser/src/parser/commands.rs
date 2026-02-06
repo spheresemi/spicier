@@ -8,6 +8,7 @@ use spicier_devices::diode::DiodeParams;
 use spicier_devices::expression::{EvalContext, parse_expression_with_params};
 use spicier_devices::jfet::JfetParams;
 use spicier_devices::mosfet::{Bsim3Params, Bsim4Params, MosfetParams, MosfetType};
+use spicier_devices::passive::CapacitorParams;
 
 use super::ParamContext;
 use crate::error::{Error, Result};
@@ -647,6 +648,10 @@ impl<'a> Parser<'a> {
 
         let model_type_upper = model_type.to_uppercase();
         let model = match model_type_upper.as_str() {
+            "C" | "CAP" => {
+                let cp = parse_capacitor_params(&params);
+                ModelDefinition::Capacitor(cp)
+            }
             "D" => {
                 let mut dp = DiodeParams::default();
                 for (k, v) in &params {
@@ -1562,6 +1567,30 @@ fn parse_bsim3_params(params: &[(String, f64)], mos_type: MosfetType) -> Bsim3Pa
     }
 
     bp
+}
+
+/// Parse capacitor model parameters from parameter list.
+fn parse_capacitor_params(params: &[(String, f64)]) -> CapacitorParams {
+    let mut cp = CapacitorParams::default();
+
+    for (k, v) in params {
+        match k.as_str() {
+            "CJ" | "CJAREA" | "C_PER_AREA" => cp.c_per_area = *v,
+            "C" | "CAP" => cp.c_base = *v,
+            "VC1" => cp.vc1 = *v,
+            "VC2" => cp.vc2 = *v,
+            "TC1" => cp.tc1 = *v,
+            "TC2" => cp.tc2 = *v,
+            "RS" => cp.rs = *v,
+            "RP" => cp.rp = *v,
+            "W" => cp.w = *v,
+            "L" => cp.l = *v,
+            "TNOM" => cp.tnom = *v + 273.15, // Convert °C to K
+            _ => {}
+        }
+    }
+
+    cp
 }
 
 /// Parse BSIM4 model parameters from parameter list.

@@ -7,6 +7,7 @@ use spicier_devices::bjt::BjtParams;
 use spicier_devices::diode::DiodeParams;
 use spicier_devices::jfet::JfetParams;
 use spicier_devices::mosfet::{Bsim3Params, Bsim4Params, MosfetParams};
+use spicier_devices::passive::CapacitorParams;
 
 use crate::error::{Error, Result};
 use crate::lexer::{Lexer, SpannedToken, Token};
@@ -129,6 +130,8 @@ pub fn parse_full(input: &str) -> Result<ParseResult> {
 #[derive(Debug, Clone)]
 pub(crate) enum ModelDefinition {
     Diode(DiodeParams),
+    /// Capacitor model with voltage/temperature coefficients and geometry.
+    Capacitor(CapacitorParams),
     Nmos(MosfetParams),
     Pmos(MosfetParams),
     /// BSIM3 NMOS (LEVEL=49 or LEVEL=8)
@@ -2094,5 +2097,133 @@ R1 in out 50
             2,
             "Should parse 2 devices (VIN and R1)"
         );
+    }
+
+    // =========================================================================
+    // Capacitor .MODEL tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_capacitor_bare_value() {
+        // Backward compatibility: C1 n1 n2 10p
+        let input = r#"Cap Bare Value
+V1 1 0 5
+C1 1 0 10p
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert_eq!(result.netlist.num_devices(), 2);
+    }
+
+    #[test]
+    fn test_parse_capacitor_model_basic() {
+        let input = r#"Cap Model Test
+.MODEL CMIM C (CJ=2e-3 VC1=0.01 VC2=0.001)
+V1 1 0 5
+C1 1 0 CMIM W=10u L=10u
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert_eq!(result.netlist.num_devices(), 2); // V1, C1
+    }
+
+    #[test]
+    fn test_parse_capacitor_model_with_temp() {
+        let input = r#"Cap Model Temp Test
+.MODEL CMIM C (CJ=2e-3 TC1=1e-4 TC2=1e-6 TNOM=25)
+V1 1 0 5
+C1 1 0 CMIM W=10u L=10u
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert_eq!(result.netlist.num_devices(), 2);
+    }
+
+    #[test]
+    fn test_parse_capacitor_model_with_parasitics() {
+        let input = r#"Cap Model Parasitics
+.MODEL CMIM C (CJ=2e-3 RS=10 RP=1e9)
+V1 1 0 5
+C1 1 0 CMIM W=10u L=10u
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert_eq!(result.netlist.num_devices(), 2);
+    }
+
+    #[test]
+    fn test_parse_capacitor_model_cap_type() {
+        // Both "C" and "CAP" should work as model type
+        let input = r#"Cap Type Test
+.MODEL CMIM CAP (CJ=2e-3)
+V1 1 0 5
+C1 1 0 CMIM W=10u L=10u
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert_eq!(result.netlist.num_devices(), 2);
+    }
+
+    #[test]
+    fn test_parse_capacitor_model_fixed_base() {
+        // Model with fixed base capacitance (no geometry)
+        let input = r#"Cap Fixed Base
+.MODEL CMOD C (C=10p VC1=0.01)
+V1 1 0 5
+C1 1 0 CMOD
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert_eq!(result.netlist.num_devices(), 2);
+    }
+
+    #[test]
+    fn test_parse_capacitor_model_instance_override() {
+        // Instance overrides W and L from model
+        let input = r#"Cap Instance Override
+.MODEL CMIM C (CJ=2e-3 W=5u L=5u)
+V1 1 0 5
+C1 1 0 CMIM W=10u L=10u
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert_eq!(result.netlist.num_devices(), 2);
+    }
+
+    #[test]
+    fn test_parse_capacitor_sky130_mim() {
+        // Realistic SKY130 MIM capacitor scenario
+        let input = r#"SKY130 MIM Cap Test
+.MODEL sky130_mim C (CJ=2.0e-3 VC1=-4.1e-5 VC2=2.0e-6 TC1=3.3e-4 TC2=0 TNOM=27)
+V1 vdd 0 DC 1.8
+C1 vdd gnd sky130_mim W=10u L=10u
+R1 gnd 0 1k
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert_eq!(result.netlist.num_devices(), 3); // V1, C1, R1
+    }
+
+    #[test]
+    fn test_parse_mixed_caps() {
+        // Mix of bare-value and model-based capacitors
+        let input = r#"Mixed Caps Test
+.MODEL CMIM C (CJ=2e-3)
+V1 1 0 5
+C1 1 2 10p
+C2 2 0 CMIM W=10u L=10u
+.end
+"#;
+
+        let result = parse_full(input).unwrap();
+        assert_eq!(result.netlist.num_devices(), 3); // V1, C1, C2
     }
 }
