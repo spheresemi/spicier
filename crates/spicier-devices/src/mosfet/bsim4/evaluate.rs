@@ -122,12 +122,15 @@ pub fn evaluate_capacitances(
         Bsim4Derived::junction_cap(params.cjswg * derived.weff, vbd, params.pbswg, params.mjswg);
     let cbd = cbd_area + cbd_sw + cbd_swg;
 
+    // Apply MULT scaling: M parallel devices
+    let mult = params.mult;
+
     Bsim4CapResult {
-        cgs,
-        cgd,
-        cgb,
-        cbs,
-        cbd,
+        cgs: cgs * mult,
+        cgd: cgd * mult,
+        cgb: cgb * mult,
+        cbs: cbs * mult,
+        cbd: cbd * mult,
     }
 }
 
@@ -213,18 +216,21 @@ pub fn evaluate(
     // Handle source-drain swap
     let (gm, gds) = if swap { (gm - gds, gds) } else { (gm, gds) };
 
+    // Apply MULT scaling: M parallel devices
+    let mult = params.mult;
+
     Bsim4EvalResult {
-        ids: sign * ids,
-        gds: gds.max(1e-12),
-        gm: gm * sign.abs(),
-        gmbs: gmbs * sign.abs(),
+        ids: sign * ids * mult,
+        gds: gds.max(1e-12) * mult,
+        gm: gm * sign.abs() * mult,
+        gmbs: gmbs * sign.abs() * mult,
         region,
         vth: sign * vth,
         vdsat,
         ueff,
-        isub: sign.abs() * isub,
-        igidl: sign * igidl,
-        igisl: sign * igisl,
+        isub: sign.abs() * isub * mult,
+        igidl: sign * igidl * mult,
+        igisl: sign * igisl * mult,
     }
 }
 

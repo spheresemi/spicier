@@ -33,6 +33,8 @@ pub struct MosfetParams {
     pub w: f64,
     /// Channel length (m). Default: 1e-6.
     pub l: f64,
+    /// Number of fingers. Default: 1.0.
+    pub nf: f64,
 }
 
 impl MosfetParams {
@@ -45,6 +47,7 @@ impl MosfetParams {
             cox: 0.0,
             w: 10e-6,
             l: 1e-6,
+            nf: 1.0,
         }
     }
 
@@ -57,12 +60,13 @@ impl MosfetParams {
             cox: 0.0,
             w: 10e-6,
             l: 1e-6,
+            nf: 1.0,
         }
     }
 
-    /// Effective transconductance: beta = kp * W / L.
+    /// Effective transconductance: beta = kp * (nf * W) / L.
     pub fn beta(&self) -> f64 {
-        self.kp * self.w / self.l
+        self.kp * self.nf * self.w / self.l
     }
 }
 

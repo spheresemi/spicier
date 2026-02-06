@@ -360,10 +360,20 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // Parse optional W=val L=val NF=val parameters
+        // Parse optional instance parameters: W, L, NF, AD, AS, PD, PS, NRD, NRS, SA, SB, SD, MULT, M
         let mut w_override: Option<f64> = None;
         let mut l_override: Option<f64> = None;
         let mut nf_override: Option<f64> = None;
+        let mut ad_override: Option<f64> = None;
+        let mut as_override: Option<f64> = None;
+        let mut pd_override: Option<f64> = None;
+        let mut ps_override: Option<f64> = None;
+        let mut nrd_override: Option<f64> = None;
+        let mut nrs_override: Option<f64> = None;
+        let mut sa_override: Option<f64> = None;
+        let mut sb_override: Option<f64> = None;
+        let mut sd_override: Option<f64> = None;
+        let mut mult_override: Option<f64> = None;
 
         loop {
             match self.peek() {
@@ -377,7 +387,17 @@ impl<'a> Parser<'a> {
                             match pname.as_str() {
                                 "W" => w_override = Some(val),
                                 "L" => l_override = Some(val),
-                                "NF" | "M" => nf_override = Some(val),
+                                "NF" => nf_override = Some(val),
+                                "AD" => ad_override = Some(val),
+                                "AS" => as_override = Some(val),
+                                "PD" => pd_override = Some(val),
+                                "PS" => ps_override = Some(val),
+                                "NRD" => nrd_override = Some(val),
+                                "NRS" => nrs_override = Some(val),
+                                "SA" => sa_override = Some(val),
+                                "SB" => sb_override = Some(val),
+                                "SD" => sd_override = Some(val),
+                                "MULT" | "M" => mult_override = Some(val),
                                 _ => {}
                             }
                         }
@@ -399,6 +419,9 @@ impl<'a> Parser<'a> {
                 if let Some(l) = l_override {
                     params.l = l;
                 }
+                if let Some(nf) = nf_override {
+                    params.nf = nf;
+                }
                 let mosfet =
                     Mosfet::with_params(name, node_drain, node_gate, node_source, mos_type, params);
                 self.netlist.add_device(mosfet);
@@ -413,6 +436,18 @@ impl<'a> Parser<'a> {
                 }
                 if let Some(nf) = nf_override {
                     params.nf = nf;
+                }
+                if let Some(ad) = ad_override {
+                    params.ad = ad;
+                }
+                if let Some(as_) = as_override {
+                    params.as_ = as_;
+                }
+                if let Some(pd) = pd_override {
+                    params.pd = pd;
+                }
+                if let Some(ps) = ps_override {
+                    params.ps = ps;
                 }
                 let mosfet = Bsim3Mosfet::with_params(
                     name,
@@ -434,6 +469,36 @@ impl<'a> Parser<'a> {
                 }
                 if let Some(nf) = nf_override {
                     params.nf = nf;
+                }
+                if let Some(ad) = ad_override {
+                    params.ad = ad;
+                }
+                if let Some(as_) = as_override {
+                    params.as_ = as_;
+                }
+                if let Some(pd) = pd_override {
+                    params.pd = pd;
+                }
+                if let Some(ps) = ps_override {
+                    params.ps = ps;
+                }
+                if let Some(nrd) = nrd_override {
+                    params.nrd = nrd;
+                }
+                if let Some(nrs) = nrs_override {
+                    params.nrs = nrs;
+                }
+                if let Some(sa) = sa_override {
+                    params.sa = sa;
+                }
+                if let Some(sb) = sb_override {
+                    params.sb = sb;
+                }
+                if let Some(sd) = sd_override {
+                    params.sd = sd;
+                }
+                if let Some(mult) = mult_override {
+                    params.mult = mult;
                 }
                 let mosfet = Bsim4Mosfet::with_params(
                     name,
