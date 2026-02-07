@@ -1,3 +1,9 @@
+> **ARCHIVED** — This repository has been consolidated into the [sphere monorepo](https://github.com/spheresemi/sphere) at [`ams/spicier/`](https://github.com/spheresemi/sphere/tree/main/ams/spicier).
+>
+> All new development happens in the sphere repo. This archive is kept for URL reference stability.
+
+---
+
 # Spicier
 
 **Spicier** is a modern re-implementation of the SPICE circuit simulator, written in **Rust** and designed from the ground up for **SIMD**, **multicore**, and **GPU-accelerated** simulation.
