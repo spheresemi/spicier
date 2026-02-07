@@ -7,7 +7,7 @@ use spicier_devices::bjt::BjtParams;
 use spicier_devices::diode::DiodeParams;
 use spicier_devices::expression::{EvalContext, parse_expression_with_params};
 use spicier_devices::jfet::JfetParams;
-use spicier_devices::mosfet::{Bsim3Params, Bsim4Params, MosfetParams, MosfetType};
+use spicier_devices::mosfet::{Bsim1Params, Bsim3Params, Bsim4Params, MosfetParams, MosfetType};
 use spicier_devices::passive::CapacitorParams;
 
 use super::ParamContext;
@@ -682,6 +682,10 @@ impl<'a> Parser<'a> {
                     // BSIM3 model
                     let bp = parse_bsim3_params(&params, MosfetType::Nmos);
                     ModelDefinition::Nmos49(bp)
+                } else if level == 4 {
+                    // BSIM1 model
+                    let bp = parse_bsim1_params(&params, MosfetType::Nmos);
+                    ModelDefinition::Nmos4(bp)
                 } else {
                     // Level 1 (Shichman-Hodges) model
                     let mut mp = MosfetParams::nmos_default();
@@ -714,6 +718,10 @@ impl<'a> Parser<'a> {
                     // BSIM3 model
                     let bp = parse_bsim3_params(&params, MosfetType::Pmos);
                     ModelDefinition::Pmos49(bp)
+                } else if level == 4 {
+                    // BSIM1 model
+                    let bp = parse_bsim1_params(&params, MosfetType::Pmos);
+                    ModelDefinition::Pmos4(bp)
                 } else {
                     // Level 1 (Shichman-Hodges) model
                     let mut mp = MosfetParams::pmos_default();
@@ -1739,6 +1747,124 @@ fn parse_bsim4_params(params: &[(String, f64)], mos_type: MosfetType) -> Bsim4Pa
             "NRD" => bp.nrd = *v,
             "NRS" => bp.nrs = *v,
             "MULT" => bp.mult = *v,
+
+            // Skip LEVEL and unrecognized parameters
+            _ => {}
+        }
+    }
+
+    bp
+}
+
+/// Parse BSIM1 (Level 4) model parameters from parameter list.
+fn parse_bsim1_params(params: &[(String, f64)], mos_type: MosfetType) -> Bsim1Params {
+    let mut bp = match mos_type {
+        MosfetType::Nmos => Bsim1Params::nmos_default(),
+        MosfetType::Pmos => Bsim1Params::pmos_default(),
+        _ => Bsim1Params::nmos_default(),
+    };
+
+    for (k, v) in params {
+        match k.as_str() {
+            // Process parameters
+            "TOX" => bp.tox = *v,
+            "TEMP" => bp.temp = *v + 273.15,
+            "VDD" => bp.vdd = *v,
+            "DL" => bp.dl = *v,
+            "DW" => bp.dw = *v,
+
+            // Threshold voltage parameters - base values
+            "VFB0" | "VFB" => bp.vfb0 = *v,
+            "LVFB" | "VFB_L" => bp.vfb_l = *v,
+            "WVFB" | "VFB_W" => bp.vfb_w = *v,
+            "PHI0" | "PHI" => bp.phi0 = *v,
+            "LPHI" | "PHI_L" => bp.phi_l = *v,
+            "WPHI" | "PHI_W" => bp.phi_w = *v,
+            "K10" | "K1" => bp.k10 = *v,
+            "LK1" | "K1_L" => bp.k1_l = *v,
+            "WK1" | "K1_W" => bp.k1_w = *v,
+            "K20" | "K2" => bp.k20 = *v,
+            "LK2" | "K2_L" => bp.k2_l = *v,
+            "WK2" | "K2_W" => bp.k2_w = *v,
+
+            // DIBL parameters
+            "ETA0" | "ETA" => bp.eta0 = *v,
+            "LETA" | "ETA_L" => bp.eta_l = *v,
+            "WETA" | "ETA_W" => bp.eta_w = *v,
+            "ETAB0" | "ETAB" => bp.etab0 = *v,
+            "LETAB" | "ETAB_L" => bp.etab_l = *v,
+            "WETAB" | "ETAB_W" => bp.etab_w = *v,
+            "ETAD0" | "ETAD" => bp.etad0 = *v,
+            "LETAD" | "ETAD_L" => bp.etad_l = *v,
+            "WETAD" | "ETAD_W" => bp.etad_w = *v,
+
+            // Mobility parameters
+            "MUZ" | "UO" | "U0" => bp.muz = *v,
+            "X2MZ0" | "X2MZ" => bp.x2mz0 = *v,
+            "LX2MZ" | "X2MZ_L" => bp.x2mz_l = *v,
+            "WX2MZ" | "X2MZ_W" => bp.x2mz_w = *v,
+            "MUS0" | "MUS" => bp.mus0 = *v,
+            "LMUS" | "MUS_L" => bp.mus_l = *v,
+            "WMUS" | "MUS_W" => bp.mus_w = *v,
+            "X2MS0" | "X2MS" => bp.x2ms0 = *v,
+            "LX2MS" | "X2MS_L" => bp.x2ms_l = *v,
+            "WX2MS" | "X2MS_W" => bp.x2ms_w = *v,
+            "X3MS0" | "X3MS" => bp.x3ms0 = *v,
+            "LX3MS" | "X3MS_L" => bp.x3ms_l = *v,
+            "WX3MS" | "X3MS_W" => bp.x3ms_w = *v,
+
+            // Gate-field degradation parameters
+            "U00" => bp.u00 = *v,
+            "LU0" | "U0_L" => bp.u0_l = *v,
+            "WU0" | "U0_W" => bp.u0_w = *v,
+            "U0B0" | "U0B" => bp.u0b0 = *v,
+            "LU0B" | "U0B_L" => bp.u0b_l = *v,
+            "WU0B" | "U0B_W" => bp.u0b_w = *v,
+
+            // Velocity saturation parameters
+            "U10" | "U1" => bp.u10 = *v,
+            "LU1" | "U1_L" => bp.u1_l = *v,
+            "WU1" | "U1_W" => bp.u1_w = *v,
+            "U1B0" | "U1B" => bp.u1b0 = *v,
+            "LU1B" | "U1B_L" => bp.u1b_l = *v,
+            "WU1B" | "U1B_W" => bp.u1b_w = *v,
+            "U1D0" | "U1D" => bp.u1d0 = *v,
+            "LU1D" | "U1D_L" => bp.u1d_l = *v,
+            "WU1D" | "U1D_W" => bp.u1d_w = *v,
+
+            // Subthreshold parameters
+            "N00" | "N0" => bp.n00 = *v,
+            "LN0" | "N0_L" => bp.n0_l = *v,
+            "WN0" | "N0_W" => bp.n0_w = *v,
+            "NB0" | "NB" => bp.nb0 = *v,
+            "LNB" | "NB_L" => bp.nb_l = *v,
+            "WNB" | "NB_W" => bp.nb_w = *v,
+            "ND0" | "ND" => bp.nd0 = *v,
+            "LND" | "ND_L" => bp.nd_l = *v,
+            "WND" | "ND_W" => bp.nd_w = *v,
+
+            // Overlap capacitances
+            "CGSO" => bp.cgso = *v,
+            "CGDO" => bp.cgdo = *v,
+            "CGBO" => bp.cgbo = *v,
+
+            // Junction parameters
+            "RSH" => bp.rsh = *v,
+            "JS" => bp.js = *v,
+            "PB" => bp.pb = *v,
+            "MJ" => bp.mj = *v,
+            "PBSW" => bp.pbsw = *v,
+            "MJSW" => bp.mjsw = *v,
+            "CJ" => bp.cj = *v,
+            "CJSW" => bp.cjsw = *v,
+
+            // Instance parameters (model defaults)
+            "W" => bp.w = *v,
+            "L" => bp.l = *v,
+            "AS" => bp.as_ = *v,
+            "AD" => bp.ad = *v,
+            "PS" => bp.ps = *v,
+            "PD" => bp.pd = *v,
 
             // Skip LEVEL and unrecognized parameters
             _ => {}

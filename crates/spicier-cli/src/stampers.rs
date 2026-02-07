@@ -401,6 +401,25 @@ impl AcStamper for NetlistAcStamper<'_> {
                         mna.stamp_admittance(right_node, None, yc);
                     }
                 }
+                AcDeviceInfo::Bsim1Mosfet {
+                    drain,
+                    gate,
+                    source,
+                    bulk,
+                    gds,
+                    gm,
+                    gmbs,
+                } => {
+                    // BSIM1 small-signal model (DC model only - no intrinsic capacitances):
+                    // 1. gds conductance between drain and source
+                    mna.stamp_conductance(drain, source, gds);
+
+                    // 2. gm transconductance: current gm*Vgs from drain to source
+                    mna.stamp_vccs(drain, source, gate, source, gm);
+
+                    // 3. gmbs transconductance: current gmbs*Vbs from drain to source
+                    mna.stamp_vccs(drain, source, bulk, source, gmbs);
+                }
                 AcDeviceInfo::Bsim3Mosfet {
                     drain,
                     gate,

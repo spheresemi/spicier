@@ -137,6 +137,20 @@ impl<'a> NoiseStamper for NetlistNoiseStamper<'a> {
                         ));
                     }
                 }
+                AcDeviceInfo::Bsim1Mosfet {
+                    drain, source, gds, ..
+                } => {
+                    // BSIM1 MOSFET thermal noise from channel
+                    // Model as equivalent resistance Req = 1/gds
+                    if gds > 0.0 {
+                        sources.push(NoiseSource::thermal(
+                            format!("{}_chan", name),
+                            drain,
+                            source,
+                            1.0 / gds,
+                        ));
+                    }
+                }
                 _ => {}
             }
         }
@@ -267,6 +281,35 @@ fn stamp_ac_device(mna: &mut ComplexMna, info: &AcDeviceInfo, omega: f64) {
             mna.stamp_conductance(*collector, *emitter, *go);
             // Transconductance gm as VCCS from base-emitter to collector-emitter
             mna.stamp_vccs(*collector, *emitter, *base, *emitter, *gm);
+        }
+        AcDeviceInfo::Bsim3Mosfet {
+            drain,
+            gate,
+            source,
+            bulk,
+            gds,
+            gm,
+            gmbs,
+            ..
+        } => {
+            // BSIM3 small-signal model
+            mna.stamp_conductance(*drain, *source, *gds);
+            mna.stamp_vccs(*drain, *source, *gate, *source, *gm);
+            mna.stamp_vccs(*drain, *source, *bulk, *source, *gmbs);
+        }
+        AcDeviceInfo::Bsim1Mosfet {
+            drain,
+            gate,
+            source,
+            bulk,
+            gds,
+            gm,
+            gmbs,
+        } => {
+            // BSIM1 small-signal model (same as BSIM3 but without capacitances)
+            mna.stamp_conductance(*drain, *source, *gds);
+            mna.stamp_vccs(*drain, *source, *gate, *source, *gm);
+            mna.stamp_vccs(*drain, *source, *bulk, *source, *gmbs);
         }
         // Skip controlled sources and mutual inductance for now (they don't contribute noise)
         AcDeviceInfo::Vcvs { .. }

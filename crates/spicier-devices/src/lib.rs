@@ -53,6 +53,9 @@ pub use jfet::{Jfet, JfetParams, JfetRegion, JfetType};
 // Re-export MOSFET (Level 1)
 pub use mosfet::{Mosfet, MosfetLevel, MosfetParams, MosfetRegion, MosfetType};
 
+// Re-export BSIM1 MOSFET (Level 4)
+pub use mosfet::bsim1::{Bsim1Mosfet, Bsim1Params, Bsim1Region};
+
 // Re-export BSIM3 MOSFET
 pub use mosfet::bsim3::{Bsim3Mosfet, Bsim3Params, Bsim3Region};
 

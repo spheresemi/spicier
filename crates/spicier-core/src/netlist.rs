@@ -93,6 +93,20 @@ pub enum AcDeviceInfo {
         /// Transconductance gm = dIds/dVgs at DC operating point.
         gm: f64,
     },
+    /// BSIM1 MOSFET (Level 4): linearized as gds + gm*Vgs + gmbs*Vbs at operating point.
+    /// DC model only - no intrinsic capacitances.
+    Bsim1Mosfet {
+        drain: Option<usize>,
+        gate: Option<usize>,
+        source: Option<usize>,
+        bulk: Option<usize>,
+        /// Output conductance gds = dIds/dVds at DC operating point.
+        gds: f64,
+        /// Transconductance gm = dIds/dVgs at DC operating point.
+        gm: f64,
+        /// Body transconductance gmbs = dIds/dVbs at DC operating point.
+        gmbs: f64,
+    },
     /// BSIM3 MOSFET: linearized as gds + gm*Vgs + gmbs*Vbs at operating point.
     Bsim3Mosfet {
         drain: Option<usize>,

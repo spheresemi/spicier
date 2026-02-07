@@ -7,7 +7,8 @@ use spicier_devices::diode::{Diode, DiodeParams};
 use spicier_devices::expression::parse_expression;
 use spicier_devices::jfet::{Jfet, JfetParams, JfetType};
 use spicier_devices::mosfet::{
-    Bsim3Mosfet, Bsim3Params, Bsim4Mosfet, Bsim4Params, Mosfet, MosfetParams, MosfetType,
+    Bsim1Mosfet, Bsim1Params, Bsim3Mosfet, Bsim3Params, Bsim4Mosfet, Bsim4Params, Mosfet,
+    MosfetParams, MosfetType,
 };
 use spicier_devices::mutual::MutualInductance;
 use spicier_devices::passive::{Capacitor, CapacitorParams, Inductor, Resistor};
@@ -323,6 +324,7 @@ impl<'a> Parser<'a> {
         #[allow(clippy::large_enum_variant)]
         enum MosfetModel {
             Level1(MosfetType, MosfetParams),
+            Bsim1(Bsim1Params),
             Bsim3(Bsim3Params),
             Bsim4(Bsim4Params),
         }
@@ -342,6 +344,12 @@ impl<'a> Parser<'a> {
                     }
                     Some(ModelDefinition::Pmos(mp)) => {
                         model = MosfetModel::Level1(MosfetType::Pmos, mp.clone());
+                    }
+                    Some(ModelDefinition::Nmos4(bp)) => {
+                        model = MosfetModel::Bsim1(bp.clone());
+                    }
+                    Some(ModelDefinition::Pmos4(bp)) => {
+                        model = MosfetModel::Bsim1(bp.clone());
                     }
                     Some(ModelDefinition::Nmos49(bp)) => {
                         model = MosfetModel::Bsim3(bp.clone());
@@ -424,6 +432,24 @@ impl<'a> Parser<'a> {
                 }
                 let mosfet =
                     Mosfet::with_params(name, node_drain, node_gate, node_source, mos_type, params);
+                self.netlist.add_device(mosfet);
+            }
+            MosfetModel::Bsim1(mut params) => {
+                // Apply instance parameter overrides
+                if let Some(w) = w_override {
+                    params.w = w;
+                }
+                if let Some(l) = l_override {
+                    params.l = l;
+                }
+                let mosfet = Bsim1Mosfet::with_params(
+                    name,
+                    node_drain,
+                    node_gate,
+                    node_source,
+                    node_bulk,
+                    params,
+                );
                 self.netlist.add_device(mosfet);
             }
             MosfetModel::Bsim3(mut params) => {
